@@ -15,11 +15,20 @@ import './globals.css';
 // heading and hero title across the site. Single-weight (400) — any
 // font-semibold / font-bold applied to headings falls back to the
 // browser's synthesised weight, which still reads cleanly on Italiana.
+// `adjustFontFallback: false` turns off Next's build-time fetch of
+// Google-Fonts CSS metadata used to synthesize an exact-metric fallback
+// font. That extra fetch intermittently returns null on Vercel's build
+// sandbox and crashes the build with `Cannot read properties of null
+// (reading '1')` inside nextFontGoogleFontLoader / Promise.all. Disabling
+// it keeps the real Italiana/Raleway webfonts loading unchanged — only
+// the synthesized fallback (which most visitors never see once the
+// woff2 lands) is skipped.
 const display = Italiana({
   weight: ['400'],
   subsets: ['latin'],
   variable: '--font-display',
   display: 'swap',
+  adjustFontFallback: false,
 });
 
 // Raleway — secondary body / UI face. Elegant geometric sans with tall
@@ -31,6 +40,7 @@ const sans = Raleway({
   subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
+  adjustFontFallback: false,
 });
 
 // `--font-hero` used to be a second Italiana instance. Calling `Italiana(...)`
