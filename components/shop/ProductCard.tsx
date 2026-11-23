@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES, BADGE_LABEL, type BadgeKind, formatINR } from '@/lib/sarees';
+import { SAREES, BADGE_LABEL, formatINR } from '@/lib/sarees';
 import { getProductHero } from '@/lib/product-images';
 import WishlistButton from '@/components/shop/WishlistButton';
 import ViewSimilarButton from '@/components/shop/ViewSimilarButton';
@@ -14,13 +14,16 @@ type Saree = (typeof SAREES)[number];
 // soft inset shadow adds inner depth so the pill feels raised without
 // a hard outline. Reads premium against both white cards and darker
 // product imagery.
-const BADGE_CLASS: Record<BadgeKind, string> = {
+// Only the stock-signal badges are rendered on cards; marketing badges
+// (bestseller / onsale / newin / featured) are filtered out upstream so
+// they never need a style entry here.
+type CardBadge = 'ready' | 'fast';
+
+const BADGE_CLASS: Record<CardBadge, string> = {
   ready:
     'bg-gradient-to-r from-emerald-200/90 via-emerald-100/70 to-white text-emerald-800 shadow-[inset_0_1px_1px_rgba(255,255,255,0.75),inset_0_-1px_2px_rgba(16,185,129,0.18)]',
   fast:
     'bg-gradient-to-r from-pink-200/90 via-pink-100/70 to-white text-pink-800 shadow-[inset_0_1px_1px_rgba(255,255,255,0.75),inset_0_-1px_2px_rgba(236,72,153,0.18)]',
-  last:
-    'bg-gradient-to-r from-rose-200/90 via-rose-100/70 to-white text-rose-800 shadow-[inset_0_1px_1px_rgba(255,255,255,0.75),inset_0_-1px_2px_rgba(244,63,94,0.18)]',
 };
 
 export default function ProductCard({
@@ -53,6 +56,14 @@ export default function ProductCard({
 }) {
   const { mrp, badges } = saree;
   const discount = mrp ? Math.round(((mrp - saree.price) / mrp) * 100) : 0;
+  // Product cards only surface the stock-signal badges — Ready To Ship /
+  // Selling Fast. Marketing badges (Bestseller / On Sale / New In /
+  // Featured) are hidden on cards because they drive their own landing
+  // rails (home sections, /shop?sale=1, etc.) and would otherwise crowd
+  // the tile.
+  const visibleBadges = badges.filter(
+    (b): b is CardBadge => b === 'ready' || b === 'fast',
+  );
 
   return (
     <Link href={`/shop/${saree.id}`} className="group block bg-white">
@@ -86,9 +97,9 @@ export default function ProductCard({
         )}
 
 
-        {!hideBadges && badges.length > 0 && (
+        {!hideBadges && visibleBadges.length > 0 && (
           <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1 pointer-events-none">
-            {badges.map((b) => (
+            {visibleBadges.map((b) => (
               <span
                 key={b}
                 className={`${BADGE_CLASS[b]} px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide`}
@@ -127,9 +138,9 @@ export default function ProductCard({
         {/* Availability chips below price — opt-in via
             showBadgesBelowPrice. Kalki-style: small pills with a
             leading bolt glyph, tone-coded by badge kind. */}
-        {showBadgesBelowPrice && badges.length > 0 && (
+        {showBadgesBelowPrice && visibleBadges.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {badges.map((b) => (
+            {visibleBadges.map((b) => (
               <span
                 key={b}
                 className={`${BADGE_CLASS[b]} inline-flex items-center gap-1 px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-wide rounded-sm`}

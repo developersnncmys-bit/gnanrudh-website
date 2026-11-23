@@ -5,24 +5,14 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 import { SAREES, formatINR } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import WishlistButton from '@/components/shop/WishlistButton';
 import { navHref } from '@/lib/soft-launch';
 
-const bestSellerIds = [
-  'banarasi-raktarani',
-  'kanjivaram-mayura',
-  'fancy-haldi',
-  'patola-rasleela',
-  'mysore-chandrika',
-  'mixedpattu-katha',
-  'mangalagiri-megha',
-  'pochampally-aakash',
-  'banarasi-jamawar',
-  'mysore-tara',
-];
-
-// Override images for matched products with the dedicated bestsellers shots.
-// Unmatched ids fall back to the catalog's `saree.image`.
+// Legacy overrides for static-saree ids — admin products use their own
+// uploaded images via mapProductToSaree, so these entries only matter when
+// the admin DB is empty and fallback paths are in play. Kept so static
+// bestseller handpicks still render with their curated photos.
 const bestSellerImages: Record<string, string> = {
   'banarasi-raktarani': '/bestsellers/raktharani%20banarasi.webp',
   'kanjivaram-mayura': '/bestsellers/Mayura%20kanjee.webp',
@@ -172,9 +162,13 @@ export default function BestSellers() {
     el.scrollBy({ left: dir * (el.clientWidth + 16), behavior: 'smooth' });
   };
 
-  const items = bestSellerIds
-    .map((id) => SAREES.find((s) => s.id === id))
-    .filter((s): s is (typeof SAREES)[number] => Boolean(s));
+  // Live catalogue only — admin ticks the "Bestseller" badge on each
+  // product in the admin drawer to include it in this rail. No hardcoded
+  // handpick list, no silent fallback to random live products — a clean
+  // skeleton renders while loading or when no product carries the badge.
+  const { sarees, loading } = useLiveSarees();
+  const items = sarees.filter((s) => s.badges.includes('bestseller')).slice(0, 10);
+  const showSkeleton = loading || items.length === 0;
 
   return (
     <section className="bg-ivory py-10 md:py-14">
@@ -248,9 +242,22 @@ export default function BestSellers() {
               ref={railRef}
               className="flex gap-4 md:gap-5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-2"
             >
-              {items.map((saree) => (
-                <ProductCard key={saree.id} saree={saree} />
-              ))}
+              {showSkeleton
+                ? Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={`skeleton-${i}`}
+                      className="shrink-0 w-[230px] sm:w-[260px] md:w-[290px] lg:w-[320px] snap-start"
+                      aria-hidden
+                    >
+                      <div className="relative overflow-hidden bg-ink/5 aspect-[4/5] rounded-sm animate-pulse" />
+                      <div className="h-9 mt-2 bg-ink/5 rounded-sm animate-pulse" />
+                      <div className="h-4 mt-3 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                      <div className="h-4 mt-2 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                    </div>
+                  ))
+                : items.map((saree) => (
+                    <ProductCard key={saree.id} saree={saree} />
+                  ))}
             </div>
           </div>
         </div>

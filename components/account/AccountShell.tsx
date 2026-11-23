@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import {
   LuUser,
@@ -13,6 +13,7 @@ import {
 } from 'react-icons/lu';
 import { useAuth } from '@/lib/auth';
 import { useLoginModal } from '@/lib/login-modal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Shared chrome for the /account/* section. A single left-column panel
 // holds the signed-in user chip, the section nav, and Sign Out; the
@@ -56,6 +57,7 @@ export default function AccountShell({
   const router = useRouter();
   const { user, hydrated, signOut } = useAuth();
   const { openLogin } = useLoginModal();
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -144,7 +146,7 @@ export default function AccountShell({
               })}
               <button
                 type="button"
-                onClick={signOut}
+                onClick={() => setConfirmOpen(true)}
                 className="flex items-center gap-3 py-2.5 mt-4 pt-4 border-t border-ink/10 text-sm text-ink/60 hover:text-ink transition-colors text-left group"
               >
                 <span className="text-ink/45 group-hover:text-ink shrink-0 transition-colors">
@@ -159,6 +161,20 @@ export default function AccountShell({
           <main className="min-w-0">{children}</main>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Sign out?"
+        message="You'll be signed out on this device. Your cart and wishlist will be cleared here, but they'll come back when you sign in again."
+        confirmLabel="Sign out"
+        cancelLabel="Stay signed in"
+        danger
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          signOut();
+        }}
+      />
     </div>
   );
 }

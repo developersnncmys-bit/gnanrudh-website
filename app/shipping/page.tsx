@@ -5,6 +5,9 @@ import {
   PolicyHeader,
   PolicyTable,
 } from '@/components/policy/PolicyChrome';
+import LegalShell from '@/components/legal/LegalShell';
+import { fetchCmsPage } from '@/lib/cms';
+import { parseCmsBody, isStubBody } from '@/lib/cms-markdown';
 
 export const metadata: Metadata = {
   title: 'Shipping Policy · House Of GnanRudh',
@@ -19,7 +22,26 @@ const domesticRows: [string, string][] = [
   ['Remote Areas', '5–10 Business Days'],
 ];
 
-export default function ShippingPage() {
+// Admin CMS page name — non-stub body overrides the bespoke page below.
+const CMS_NAME = 'Shipping policy';
+
+export default async function ShippingPage() {
+  const page = await fetchCmsPage(CMS_NAME);
+  if (page && !isStubBody(page.body)) {
+    const parsed = parseCmsBody(page.body || '');
+    return (
+      <LegalShell
+        title={page.name || 'Shipping Policy'}
+        lastUpdated={page.updated || ''}
+        intro={parsed.intro}
+        sections={parsed.sections}
+      />
+    );
+  }
+  return <ShippingFallback />;
+}
+
+function ShippingFallback() {
   return (
     <main className="bg-white text-gray-900">
       <PolicyHeader

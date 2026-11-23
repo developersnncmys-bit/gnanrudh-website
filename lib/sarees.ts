@@ -14,12 +14,23 @@ export type Weave =
 // Stock / availability ribbons rendered on the product card and the
 // product detail page. Kept here so the catalog data, ProductCard,
 // ProductDetail and the future admin API all share one vocabulary.
-export type BadgeKind = 'ready' | 'fast' | 'last';
+export type BadgeKind =
+  | 'ready'
+  | 'fast'
+  | 'last'
+  | 'bestseller'
+  | 'onsale'
+  | 'newin'
+  | 'featured';
 
 export const BADGE_LABEL: Record<BadgeKind, string> = {
   ready: 'Ready To Ship',
   fast: 'Selling Fast',
   last: 'Few Left',
+  bestseller: 'Bestseller',
+  onsale: 'On Sale',
+  newin: 'New In',
+  featured: 'Featured',
 };
 
 // Occasions keyed off the Occasions mega-menu (Nav.tsx → OccasionsMegaMenu).
@@ -40,14 +51,52 @@ export type Saree = {
   mrp: number;   // INR — pre-discount, always present so every card can show a strike-through + % off
   badges: BadgeKind[]; // stock signals; can be empty
   story: string;
-  image: string; // public-rooted path
+  image: string; // primary photograph (first imageUrl for admin products)
+  // Every photograph the admin uploaded. First entry equals `image`. The PDP
+  // gallery renders this verbatim — length is admin-controlled, 1..N. Empty
+  // for legacy static sarees that only carry a single `image` string.
+  imageUrls?: string[];
+  // Colour the main image set belongs to. One variant id for the whole
+  // gallery (every photo represents that colour), or '' for shared. Empty
+  // on legacy static sarees that predate the colour-tag UI.
+  imageVariant?: string;
+  // Admin-tagged occasions — parent names like "Festive" and/or sub-occasion
+  // names like "Diwali". Used by storefront tabs/filters that key off
+  // occasion rather than price-derived tier. Empty for legacy sarees.
+  occasions?: string[];
   palette: string[]; // hex tones drawn from the saree, used for accents
+  // Admin-defined colour variants. Each one becomes a swatch in the PDP's
+  // colour picker. Empty for static sarees — PDP falls back to palette +
+  // STANDARD_COLORWAYS in that case. `imageUrls` is the per-variant photo
+  // set; when empty the gallery falls back to the product-level imageUrls.
+  variants?: { id: string; colour: string; hex: string; sku?: string; stock?: number; imageUrls?: string[] }[];
   details: {
     length: string;
     blouse: string;
     zari: string;
     weight?: string;
+    // Admin-authored PDP fields. Empty strings mean "no admin override —
+    // use the saree's own default rendering (id for designNo, nothing for
+    // packContains/manufacturedBy)".
+    designNo?: string;
+    packContains?: string;
+    manufacturedBy?: string;
+    // PDP Identity card admin overrides. Empty = the PDP drops the row.
+    styleNo?: string;
+    colourLabel?: string;
   };
+  // Admin-authored copy for the other PDP tabs. Empty = the storefront
+  // shows an empty-state hint on that tab, not placeholder seed copy.
+  speciality?: string;
+  styleTip?: string;
+  fitTip?: string;
+  shippingNote?: string;
+  // Admin-authored FAQ pairs for the PDP's FAQs tab. Empty = the tab
+  // shows an empty-state hint (no shipped fallback).
+  faqs?: { q: string; a: string }[];
+  // Admin-uploaded drape video URL. Empty = no video thumbnail renders on
+  // the PDP gallery; present = rendered as the last thumbnail.
+  videoUrl?: string;
 };
 
 export const TIERS: Record<
@@ -959,8 +1008,21 @@ export function getColorways(saree: Saree): Colorway[] {
   const seen = new Set<string>();
   const out: Colorway[] = [];
 
-  // Start with the saree's own palette so its actual woven tones are
-  // always pickable (and selected by default).
+  // Admin-defined variants win — each one becomes a swatch with the exact
+  // name the admin typed. Only variants with a hex are usable as colour
+  // chips. When the admin has defined variants, we DON'T pad with standards
+  // — the colour picker reflects exactly what's in stock.
+  if (saree.variants && saree.variants.length) {
+    for (const v of saree.variants) {
+      const key = (v.hex || '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: v.id || `variant-${out.length}`, name: v.colour, hex: key });
+    }
+    if (out.length) return out;
+  }
+
+  // Fallback (static sarees only): start with the saree's own palette…
   saree.palette.forEach((hex, i) => {
     const key = hex.toLowerCase();
     if (seen.has(key)) return;
@@ -968,7 +1030,7 @@ export function getColorways(saree: Saree): Colorway[] {
     out.push({ id: `palette-${i}`, name: nameForHex(hex, i), hex: key });
   });
 
-  // Top up with curated standards so every PDP shows ~5 options.
+  // …then top up with curated standards so every PDP shows ~5 options.
   for (const c of STANDARD_COLORWAYS) {
     if (out.length >= 5) break;
     const key = c.hex.toLowerCase();

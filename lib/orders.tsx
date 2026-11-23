@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { ordersApi, getToken, type CustomerOrder } from './api';
 
 export type OrderStatus = 'placed' | 'cancelled';
 export type PayMethod = 'upi' | 'card' | 'netbanking' | 'cod';
@@ -100,6 +101,17 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setState(readStorage());
     setHydrated(true);
+    // If signed in, overlay the server's order list on top of the local
+    // snapshot. Server orders use the backend's `_id` (e.g. "O20261119…")
+    // and richer status strings — see mergeServerOrders for the mapping.
+    if (getToken()) {
+      ordersApi.list()
+        .then((res) => {
+          const serverOrders = (res.items || []).map(mapServerOrder);
+          setState((prev) => ({ orders: mergeServerOrders(prev.orders, serverOrders) }));
+        })
+        .catch(() => { /* leave local orders untouched if the API is down */ });
+    }
   }, []);
 
   useEffect(() => {
@@ -129,6 +141,31 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       status: 'placed',
     };
     setState((s) => ({ orders: [order, ...s.orders] }));
+    // Fire-and-forget: persist to backend for signed-in customers so the
+    // admin CRM sees the order and the next /me rehydrate reconciles the
+    // server id. Failures are logged — the local order still stands so
+    // the UX never blocks on network.
+    if (getToken()) {
+      ordersApi.create({
+        items: input.items.map((it) => ({ pid: it.productId, qty: it.qty })),
+        shipping: input.shippingFee,
+        coupon: input.promoCode,
+        paymentMethod: input.payMethod,
+        address: {
+          pin: input.address.pincode,
+          label: 'Checkout',
+          name: input.address.fullName,
+          phone: input.address.phone,
+          line1: input.address.line1,
+          line2: input.address.line2,
+          city: input.address.city,
+          state: input.address.state,
+          country: input.address.country,
+        },
+      }).catch((err) => {
+        console.warn('[orders] server create failed:', err?.message || err);
+      });
+    }
     return order;
   }, []);
 
@@ -146,6 +183,11 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         return updated;
       }),
     }));
+    if (updated && getToken()) {
+      ordersApi.cancel(id).catch((err) => {
+        console.warn('[orders] server cancel failed:', err?.message || err);
+      });
+    }
     return updated;
   }, []);
 
@@ -172,4 +214,59 @@ export function useOrders() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useOrders must be used inside <OrdersProvider>');
   return ctx;
+}
+
+// Map a server-persisted order into the storefront's display shape. Server
+// orders carry less local metadata (full product name, shipping method tier,
+// per-line image) so we fill the gaps from the items array; the account
+// page still renders the line, just with the server's canonical id.
+function mapServerOrder(o: CustomerOrder): Order {
+  const items: OrderItem[] = (o.items || []).map((it) => ({
+    productId: it.pid,
+    name: it.pid,
+    weave: '',
+    qty: it.qty,
+    unitPrice: it.price,
+    image: '',
+  }));
+  const paid = String(o.payment?.status || '').toLowerCase() === 'paid';
+  const cancelled = String(o.status || '').toLowerCase().includes('cancel');
+  return {
+    id: o._id,
+    createdAt: Date.parse(o.placed) || Date.now(),
+    status: cancelled ? 'cancelled' : 'placed',
+    items,
+    itemCount: items.reduce((s, it) => s + it.qty, 0),
+    address: {
+      fullName: '',
+      phone: '',
+      email: '',
+      line1: '',
+      line2: '',
+      city: '',
+      state: '',
+      pincode: o.ship?.pin || '',
+      country: 'India',
+    },
+    payMethod: (o.payment?.method as PayMethod) || 'upi',
+    shipMethod: 'standard',
+    paid,
+    promoCode: o.coupon,
+    subtotal: o.sub || 0,
+    discount: o.discount || 0,
+    shippingFee: o.shipping || 0,
+    codFee: 0,
+    tax: 0,
+    total: o.total || 0,
+  };
+}
+
+// Merge server + local order lists by id, preferring the server copy when
+// both exist. Local-only orders (guest-flow or server-write-still-in-flight)
+// stay visible so a just-placed order doesn't disappear on hydration.
+function mergeServerOrders(local: Order[], server: Order[]): Order[] {
+  const byId = new Map<string, Order>();
+  for (const o of local) byId.set(o.id, o);
+  for (const o of server) byId.set(o.id, o);
+  return Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt);
 }

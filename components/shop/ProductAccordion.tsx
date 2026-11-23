@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { type SAREES, TIERS } from '@/lib/sarees';
+import { type SAREES } from '@/lib/sarees';
 
 type Saree = (typeof SAREES)[number];
 
@@ -83,29 +83,35 @@ export default function ProductAccordion({ saree }: { saree: Saree }) {
         {active === 'details' && <ProductDetailsTable saree={saree} />}
         {active === 'speciality' && (
           <div className="max-w-3xl mx-auto text-center">
-            <p className="font-display font-bold italic text-sm md:text-base text-ink leading-[1.7]">
-              {saree.story}
-            </p>
+            {saree.speciality ? (
+              <p className="font-display font-bold italic text-sm md:text-base text-ink leading-[1.7] whitespace-pre-line">
+                {saree.speciality}
+              </p>
+            ) : (
+              <EmptyTab message="Speciality notes are being added for this saree." />
+            )}
           </div>
         )}
         {active === 'tips' && (
-          <div className="max-w-3xl mx-auto grid md:grid-cols-2 gap-8 md:gap-12">
-            <PanelNote title="Style" body="Pair with traditional gold or kundan jewellery for a heritage look. A choker on a high-neck blouse balances the heavy pallu; a long rani haar suits a deeper neckline." />
-            <PanelNote title="Fit" body="Ensure the pallu falls effortlessly over the shoulder for a graceful drape. Pleats should sit at the navel and fall straight to the floor. A petticoat in a matching shade keeps the silhouette clean." />
-          </div>
+          (saree.styleTip || saree.fitTip) ? (
+            <div className="max-w-3xl mx-auto grid md:grid-cols-2 gap-8 md:gap-12">
+              {saree.styleTip && <PanelNote title="Style" body={saree.styleTip} />}
+              {saree.fitTip && <PanelNote title="Fit" body={saree.fitTip} />}
+            </div>
+          ) : (
+            <EmptyTab message="Style & fit tips are being added for this saree." />
+          )
         )}
         {active === 'shipping' && (
           <div className="max-w-3xl mx-auto text-center space-y-5">
-            <p className="text-[0.95rem] md:text-base text-ink/75 leading-[1.95]">
-              Exchange and returns are available within 48 Hrs of delivery.
-              Items must be in their original condition with all tags intact.
-              Custom-stitched blouses are non-returnable.
-            </p>
-            <p className="text-[0.95rem] md:text-base text-ink/75 leading-[1.95]">
-              Estimated delivery dates are approximate and may shift due to
-              unforeseen circumstances. Free shipping across India on every
-              order.
-            </p>
+            {saree.shippingNote ? (
+              <p className="text-[0.95rem] md:text-base text-ink/75 leading-[1.95] whitespace-pre-line">
+                {saree.shippingNote}
+              </p>
+            ) : (
+              <EmptyTab message="Shipping & returns note is being added for this saree." />
+            )}
+            {/* The policy link is navigation, not copy — always rendered. */}
             <Link
               href="/returns"
               className="inline-flex items-center gap-2 pt-2 font-display font-bold text-[1.05rem] text-maroon-deep hover:text-maroon transition-colors"
@@ -117,26 +123,27 @@ export default function ProductAccordion({ saree }: { saree: Saree }) {
         )}
         {active === 'faqs' && (
           <div className="max-w-3xl mx-auto">
-            <FaqRow
-              q="What if I want to exchange or return my order?"
-              a="Exchange and returns are available within 48 Hrs of delivery. Items must be in original condition with all tags intact. Custom-stitched pieces are non-returnable."
-            />
-            <FaqRow
-              q="Will I receive a quality product?"
-              a="As a heritage brand, we adhere to strict quality controls. Every saree goes through a five-step inspection — fabric integrity, zari purity, dye fastness, weave fidelity and finish — before dispatch."
-            />
-            <FaqRow
-              q="How long will my order take to arrive?"
-              a="Orders ship within 5–7 working days, insured and tracked. International orders take an additional 7–10 working days depending on the destination."
-            />
-            <FaqRow
-              q="Can I customise the blouse?"
-              a="Yes — select the Stitched option above and provide measurements at checkout. Custom stitching adds ₹800 and 5 working days to the dispatch time."
-            />
+            {saree.faqs && saree.faqs.length > 0 ? (
+              saree.faqs.map((faq, i) => (
+                <FaqRow key={`faq-${i}`} q={faq.q} a={faq.a} />
+              ))
+            ) : (
+              <EmptyTab message="FAQs are being added for this saree." />
+            )}
           </div>
         )}
       </div>
     </section>
+  );
+}
+
+// Shown on any PDP tab where the admin hasn't authored content yet —
+// quiet italic one-liner instead of silently rendering shipped seed copy.
+function EmptyTab({ message }: { message: string }) {
+  return (
+    <div className="max-w-xl mx-auto text-center py-6">
+      <p className="text-sm text-ink/55 italic leading-relaxed">{message}</p>
+    </div>
   );
 }
 
@@ -148,55 +155,53 @@ type DetailSection = {
 };
 
 function ProductDetailsTable({ saree }: { saree: Saree }) {
-  const tier = TIERS[saree.tier];
   const swatchHex = saree.palette[0];
-  const sections: DetailSection[] = [
+  // Build rows strictly from admin-authored data. No derivations, no
+  // seed fallbacks — empty values drop the row, sections with no rows
+  // are hidden entirely so the PDP never shows invented copy.
+  const row = (label: string, value: string | undefined, swatch?: string): DetailRow | null => {
+    const v = (value || '').trim();
+    if (!v) return null;
+    return swatch ? { label, value: v, swatch } : { label, value: v };
+  };
+  const allSections: DetailSection[] = [
     {
       title: 'Identity',
       icon: 'tag',
       rows: [
-        { label: 'Style No', value: saree.id.toUpperCase() },
-        {
-          label: 'Design No',
-          value: `K${saree.id.slice(0, 3).toUpperCase()}${saree.price}`,
-        },
-        {
-          label: 'Color',
-          value: swatchHex ? colourName(swatchHex) : '—',
-          swatch: swatchHex,
-        },
-        { label: 'Category', value: tier.title },
-      ],
+        row('Style No', saree.details.styleNo),
+        row('Design No', saree.details.designNo),
+        row('Color', saree.details.colourLabel, swatchHex),
+        // Category auto-derived from the product's category pick in the
+        // admin (same source as Work). One admin field, two PDP labels.
+        row('Category', saree.weave),
+      ].filter((r): r is DetailRow => r !== null),
     },
     {
       title: 'Craft & Material',
       icon: 'thread',
       rows: [
-        { label: 'Work', value: saree.weave },
-        { label: 'Region', value: saree.region },
-        { label: 'Zari', value: saree.details.zari },
-        { label: 'Length', value: saree.details.length },
-        { label: 'Blouse', value: saree.details.blouse },
-        ...(saree.details.weight
-          ? [{ label: 'Weight', value: saree.details.weight }]
-          : []),
-      ],
+        row('Work', saree.weave),
+        row('Zari', saree.details.zari),
+        row('Length', saree.details.length),
+        row('Blouse', saree.details.blouse),
+        row('Weight', saree.details.weight),
+      ].filter((r): r is DetailRow => r !== null),
     },
     {
       title: 'Pack & Provenance',
       icon: 'box',
       rows: [
-        {
-          label: 'Pack Contains',
-          value: '1 Saree, 1 Unstitched Blouse Fabric',
-        },
-        {
-          label: 'Manufactured',
-          value: 'House Of GnanRudh Pvt Ltd, Nellore',
-        },
-      ],
+        row('Pack Contains', saree.details.packContains),
+        row('Manufactured', saree.details.manufacturedBy),
+      ].filter((r): r is DetailRow => r !== null),
     },
   ];
+  const sections = allSections.filter((section) => section.rows.length > 0);
+
+  if (sections.length === 0) {
+    return <EmptyTab message="Product details are being added for this saree." />;
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-y-12 lg:gap-y-0 lg:divide-x divide-ink/10">
@@ -284,22 +289,6 @@ function DetailIcon({ name }: { name: 'tag' | 'thread' | 'box' }) {
         </svg>
       );
   }
-}
-
-function colourName(hex: string): string {
-  const map: Record<string, string> = {
-    '#082052': 'Maroon',
-    '#E0AE6D': 'Gold',
-    '#3F3F3F': 'Ink Black',
-    '#0E4D5C': 'Peacock',
-    '#1E1B3A': 'Indigo',
-    '#A66D23': 'Bronze',
-    '#F2C99E': 'Champagne',
-    '#F9F9F9': 'Cream',
-    '#5D3E14': 'Coffee',
-    '#F7EAD9': 'Ivory',
-  };
-  return map[hex] ?? hex;
 }
 
 function PanelNote({ title, body }: { title: string; body: string }) {

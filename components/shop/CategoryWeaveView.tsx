@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SAREES, STANDARD_COLORWAYS, BADGE_LABEL, sareeMatchesColor } from '@/lib/sarees';
 import type { Weave, BadgeKind } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import ProductCard from './ProductCard';
 import { Section, Check, RangeInput, PriceRow, ColorList } from './FilterRailPrimitives';
 import CategoryWeaveIntro from './CategoryWeaveIntro';
@@ -27,7 +28,7 @@ import FilterTriggerBar from './FilterTriggerBar';
  * working" rule.
  */
 
-const AVAILABILITY_BADGES: BadgeKind[] = ['ready', 'fast', 'last'];
+const AVAILABILITY_BADGES: BadgeKind[] = ['ready', 'fast'];
 
 const PRICE_BRACKETS: { id: string; label: string; min: number; max: number }[] = [
   { id: 'under-5k',  label: 'Under ₹5,000',           min: 0,     max: 5000 },
@@ -153,11 +154,12 @@ export default function CategoryWeaveView({ weave }: { weave: Weave }) {
     updateUrl({ pmin: nextMin, pmax: nextMax });
   };
 
-  // Base dataset — only sarees matching the locked weave. Reversed so
-  // "newest" weaves of this type appear first by default.
+  // Live catalogue only — filter to this landing's locked weave. `loading`
+  // drives the skeleton grid below.
+  const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
   const base = useMemo(
-    () => SAREES.filter((s) => s.weave === weave).reverse(),
-    [weave],
+    () => liveSarees.filter((s) => s.weave === weave).reverse(),
+    [liveSarees, weave],
   );
 
   const items = useMemo(() => {
@@ -254,7 +256,20 @@ export default function CategoryWeaveView({ weave }: { weave: Weave }) {
             onSortChange={(v) => updateUrl({ order: v as Sort })}
           />
 
-          {items.length === 0 ? (
+          {(sareesLoading || base.length === 0) ? (
+            <div
+              className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8 pt-8"
+              aria-busy="true"
+            >
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={`weave-skel-${i}`} aria-hidden>
+                  <div className="relative overflow-hidden bg-ink/5 aspect-[4/5] rounded-sm animate-pulse" />
+                  <div className="h-4 mt-3 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                  <div className="h-4 mt-2 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : items.length === 0 ? (
             <div className="py-16 text-center text-sm text-gray-600">
               No {weave} sarees match these filters.{' '}
               <button

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { type SAREES, formatINR, getColorways } from '@/lib/sarees';
 import { getPdpVariants, getProductHero } from '@/lib/product-images';
+import { useLiveSarees } from '@/lib/catalog';
 import { useShop } from '@/lib/shop-store';
 import { useCheckoutModal } from '@/lib/checkout-modal';
 import { useLoginModal } from '@/lib/login-modal';
@@ -51,11 +52,23 @@ export default function ProductInfo({
     proceed();
   };
   const colorways = useMemo(() => getColorways(saree), [saree]);
-  const selectedColor = colorways.find((c) => c.id === colorId) ?? colorways[0];
-  // Same-weave variants for the "More in ..." strip — a true variant
-  // picker. First entry is this saree itself; the rest are other
-  // sarees in the same weave category ranked by palette proximity.
-  const variants = useMemo(() => getPdpVariants(saree), [saree]);
+  // `null` until the shopper actually picks a swatch — the gallery on
+  // the left shows the product-level main image on first paint, and only
+  // after a swatch click does the swatch highlight + gallery swap.
+  const selectedColor = colorId ? colorways.find((c) => c.id === colorId) ?? null : null;
+  // Out-of-stock gate on the CTAs. Only fires when a swatch is picked —
+  // first paint keeps the buttons live so the shopper can at least click
+  // Add to Cart before choosing a colour. If the picked variant has zero
+  // stock, both Add to Cart and Buy It Now swap to a disabled
+  // "Out of Stock" state.
+  const selectedVariant = colorId ? saree.variants?.find((v) => v.id === colorId) ?? null : null;
+  const isSelectedOutOfStock = Boolean(selectedVariant) && (selectedVariant?.stock ?? 0) <= 0;
+  // Same-weave variants for the "More in ..." strip — pulled from the live
+  // catalog so new admin products show up as siblings without a rebuild.
+  // First entry is this saree itself; the rest are same-weave live sarees
+  // ranked by palette proximity.
+  const { sarees: liveSarees } = useLiveSarees();
+  const variants = useMemo(() => getPdpVariants(saree, liveSarees), [saree, liveSarees]);
   const [blouseOption, setBlouseOption] = useState<'unstitched' | 'stitched'>('unstitched');
   const [shareNote, setShareNote] = useState<string | null>(null);
 
@@ -292,25 +305,82 @@ export default function ProductInfo({
         </span>
       </div>
 
+      {/* Colour picker — one swatch per admin-defined colour variant.
+          Shows the currently selected colour's name above the row (or a
+          "Select a colour" prompt before the shopper picks one), flags
+          out-of-stock variants with a diagonal strike and dimmed opacity,
+          and lifts onColorChange so the left gallery swaps to the picked
+          colour's images. Only rendered when the admin has defined
+          variants (static sarees fall back to palette colours which
+          aren't individually orderable, so no picker there). */}
+      {colorways.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-baseline gap-2 mb-2.5">
+            <span className="text-[0.7rem] font-bold tracking-[0.18em] uppercase text-gray-900">
+              Colour
+            </span>
+            <span className="text-sm text-gray-700">
+              {selectedColor ? selectedColor.name : <span className="text-gray-500 italic">Pick a colour to view</span>}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {colorways.map((c) => {
+              const active = c.id === (selectedColor?.id ?? '');
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => onColorChange(c.id)}
+                  title={c.name}
+                  aria-label={`Pick ${c.name}`}
+                  aria-pressed={active}
+                  className={`relative w-9 h-9 rounded-full transition-all ${
+                    active
+                      ? 'ring-2 ring-maroon-deep ring-offset-2 ring-offset-white'
+                      : 'ring-1 ring-black/15 hover:ring-black/45'
+                  }`}
+                  style={{ background: c.hex }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* CTAs — Kalki PDP uses chunky full-width buttons that read as
-          the page's primary actions. */}
+          the page's primary actions. When the selected colour is out of
+          stock, both buttons collapse to a disabled "Out of Stock" chip
+          so the shopper can't accidentally add an unshippable variant. */}
       <div className="mt-5 grid gap-3 max-w-[420px]">
-        <button
-          type="button"
-          onClick={() => addToCart(saree.id, 1)}
-          className="w-full border border-gray-900 text-gray-900 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-gray-900 hover:text-white transition-colors flex items-center justify-center gap-2.5"
-        >
-          <span>Add to Cart</span>
-          <span className="w-1 h-1 rounded-full bg-current" />
-          <span className="tabular-nums">{formatINR(total)}</span>
-        </button>
-        <button
-          type="button"
-          onClick={handleBuyItNow}
-          className="w-full bg-ink text-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-maroon-deep transition-colors"
-        >
-          Buy It Now
-        </button>
+        {isSelectedOutOfStock ? (
+          <button
+            type="button"
+            disabled
+            aria-disabled
+            className="w-full border border-gray-300 bg-gray-100 text-gray-500 py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] cursor-not-allowed flex items-center justify-center gap-2.5"
+          >
+            Out of Stock
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => addToCart(saree.id, 1)}
+              className="w-full border border-gray-900 text-gray-900 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-gray-900 hover:text-white transition-colors flex items-center justify-center gap-2.5"
+            >
+              <span>Add to Cart</span>
+              <span className="w-1 h-1 rounded-full bg-current" />
+              <span className="tabular-nums">{formatINR(total)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleBuyItNow}
+              className="w-full bg-ink text-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-maroon-deep transition-colors"
+            >
+              Buy It Now
+            </button>
+          </>
+        )}
       </div>
 
     </div>

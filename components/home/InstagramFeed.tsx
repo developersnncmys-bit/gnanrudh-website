@@ -1,7 +1,11 @@
+'use client';
+
+import { useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { LuInstagram } from 'react-icons/lu';
 import { SAREES } from '@/lib/sarees';
+import { useLiveCategories, useLiveSarees } from '@/lib/catalog';
 
 type Post = {
   image: string;
@@ -91,6 +95,32 @@ const INSTAGRAM_HANDLE = '@houseofgnanrudh';
 const INSTAGRAM_URL = 'https://instagram.com/houseofgnanrudh';
 
 export default function InstagramFeed() {
+  // One tile per saree-flagged category, pulled live from the backend. For
+  // each category we pick the first product whose `region` (set from the
+  // backend's `cat` field by mapProductToSaree) matches. Categories with no
+  // products assigned are skipped so the marquee never shows empty tiles.
+  // When the live fetch is still in flight or returns nothing, we fall
+  // through to the hand-curated static posts so the home page never shows
+  // an empty marquee strip.
+  const { categories } = useLiveCategories();
+  const { sarees } = useLiveSarees();
+  const livePosts = useMemo<Post[]>(() => {
+    if (!categories.length || !sarees.length) return [];
+    const out: Post[] = [];
+    for (const cat of categories) {
+      const match = sarees.find((s) => s.region === cat._id);
+      if (!match) continue;
+      out.push({
+        image: match.image,
+        productId: match.id,
+        category: cat.name,
+        caption: match.name,
+      });
+    }
+    return out;
+  }, [categories, sarees]);
+  const displayPosts = livePosts.length > 0 ? livePosts : posts;
+
   return (
     <section className="instagram-section bg-bone py-10 md:py-14">
       <div className="max-w-[1720px] mx-auto px-6 lg:px-10">
@@ -125,9 +155,16 @@ export default function InstagramFeed() {
             spotted mid-scroll. */}
         <div className="relative overflow-hidden -mx-6 lg:-mx-10">
           <div className="instagram-marquee flex gap-3 md:gap-4 w-max px-6 lg:px-10">
-            {[...posts, ...posts].map((p, i) => {
-              const product = SAREES.find((s) => s.id === p.productId);
-              const href = product ? `/shop/${product.id}` : INSTAGRAM_URL;
+            {[...displayPosts, ...displayPosts].map((p, i) => {
+              // For live-sourced posts, productId already points at a real
+              // saree so we can go straight to the PDP. The SAREES lookup
+              // is only there for the fallback (static) posts whose ids
+              // might be stale against the live catalogue.
+              const hasLiveProduct = livePosts.some((lp) => lp.productId === p.productId);
+              const product = hasLiveProduct ? null : SAREES.find((s) => s.id === p.productId);
+              const href = hasLiveProduct
+                ? `/shop/${p.productId}`
+                : product ? `/shop/${product.id}` : INSTAGRAM_URL;
               return (
                 <Link
                   key={`${p.productId}-${i}`}

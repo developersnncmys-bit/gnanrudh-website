@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import LegalShell, { type LegalSection } from '@/components/legal/LegalShell';
+import { fetchCmsPage } from '@/lib/cms';
+import { parseCmsBody, isStubBody } from '@/lib/cms-markdown';
 
 export const metadata: Metadata = {
   title: 'Terms & Conditions · House Of GnanRudh',
@@ -7,7 +9,20 @@ export const metadata: Metadata = {
     'Terms & Conditions for House Of GnanRudh — orders, pricing, shipping, returns, mandatory unboxing video, intellectual property and dispute resolution.',
 };
 
-const sections: LegalSection[] = [
+// CMS page name under /api/public/pages/<name> — matches the admin seed label.
+const CMS_NAME = 'Terms of use';
+const FALLBACK_UPDATED = '12 November 2026';
+const FALLBACK_INTRO = (
+  <p>
+    Welcome to <strong className="text-gray-900">HOUSE OF GNANRUDH</strong>.
+    By accessing or using our website, placing an order, or purchasing
+    our products, you agree to be bound by these Terms &amp;
+    Conditions. If you do not agree with these Terms, please do not
+    use our website.
+  </p>
+);
+
+const FALLBACK_SECTIONS: LegalSection[] = [
   {
     id: 'acceptance',
     title: '1. Acceptance of Terms',
@@ -298,21 +313,20 @@ const sections: LegalSection[] = [
   },
 ];
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  // Admin-authored body takes over once the stub ("TODO: supply...") is
+  // replaced. Until then the hand-written fallback above keeps rendering so
+  // visitors never land on a half-filled policy.
+  const page = await fetchCmsPage(CMS_NAME);
+  const useCms = page && !isStubBody(page.body);
+  const parsed = useCms ? parseCmsBody(page.body || '') : null;
+
   return (
     <LegalShell
       title="Terms & Conditions"
-      lastUpdated="12 November 2026"
-      intro={
-        <p>
-          Welcome to <strong className="text-gray-900">HOUSE OF GNANRUDH</strong>.
-          By accessing or using our website, placing an order, or purchasing
-          our products, you agree to be bound by these Terms &amp;
-          Conditions. If you do not agree with these Terms, please do not
-          use our website.
-        </p>
-      }
-      sections={sections}
+      lastUpdated={page?.updated || FALLBACK_UPDATED}
+      intro={parsed?.intro ?? FALLBACK_INTRO}
+      sections={parsed?.sections?.length ? parsed.sections : FALLBACK_SECTIONS}
     />
   );
 }

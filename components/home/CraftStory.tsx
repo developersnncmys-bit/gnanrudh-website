@@ -1,7 +1,11 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
+import { useMemo } from 'react';
 import SectionHeader from '@/components/home/SectionHeader';
 import { navHref } from '@/lib/soft-launch';
+import { useLiveOccasions, useLiveHomeBanners } from '@/lib/catalog';
 
 /**
  * CraftStory — bridal collection section.
@@ -36,51 +40,63 @@ const feature: Feature = {
   mobileImagePosition: '50% 30%',
 };
 
-// Four bridal-occasion sub-edits, mirrored on the Kalki "Wedding
-// Wardrobe" pattern — portrait card per occasion with the title and
-// SHOP NOW CTA overlaid at the bottom over a soft gradient veil.
+// Bridal-occasion sub-edit tile — one portrait card per sub-occasion
+// under the admin's "Wedding" parent occasion. Title + SHOP NOW chip
+// overlaid at the bottom on a soft gradient veil, mirroring the Kalki
+// "Wedding Wardrobe" pattern.
 type Occasion = {
   title: string;
   href: string;
-  image: string;
-  imagePosition?: string;
+  image?: string;
 };
-
-const occasions: Occasion[] = [
-  {
-    title: 'Haldi Hues',
-    href: '/shop?tier=bridal&occasion=haldi',
-    image: '/ocassions/Haldi.png',
-    imagePosition: '50% 30%',
-  },
-  {
-    title: 'Mehendi Moments',
-    href: '/shop?tier=bridal&occasion=mehendi',
-    image: '/ocassions/Mehendi.png',
-    imagePosition: '50% 25%',
-  },
-  {
-    title: 'Wedding Day',
-    href: '/shop?tier=bridal',
-    image: '/ocassions/bridal.png',
-    imagePosition: '50% 20%',
-  },
-  {
-    title: 'The Reception',
-    href: '/shop?tier=bridal&occasion=reception',
-    image: '/product/banarasi.webp',
-    imagePosition: '50% 25%',
-  },
-];
 
 export default function CraftStory() {
   const ctaHref = navHref(feature.ctaHref);
+  const { occasions: liveOccasions, loading: occLoading } = useLiveOccasions();
+  // Admin-controlled copy + image for the Bridal Edit strip. SectionHeader
+  // title + description come from the "bridal" banner row; the main image
+  // overrides feature.image when set. Hardcoded fallbacks preserve the
+  // current look on a fresh DB or during the first paint before the fetch
+  // resolves.
+  const { banners } = useLiveHomeBanners();
+  const bridal = banners.bridal;
+  const headerTitle = bridal?.title || 'The Bridal Edit';
+  const headerDescription = bridal?.description
+    || 'Heirloom silks, woven to remember — temple-border Kanjeevarams, pit-loom Banarasis and double-ikat Patolas for the day you keep.';
+  const bannerImage = bridal?.image || feature.image;
+
+  // Find the admin's "Wedding" top-level occasion (case-insensitive match
+  // on _id or name) and render its sub-occasions as the tile grid. Admin
+  // controls which cards appear and in what order via the Occasions
+  // screen in the admin panel.
+  const wedding = useMemo(
+    () => liveOccasions.find(
+      (o) => !o.parent && (
+        String(o._id || '').toLowerCase() === 'wedding'
+        || o.name.toLowerCase() === 'wedding'
+      ),
+    ),
+    [liveOccasions],
+  );
+  const occasions: Occasion[] = useMemo(() => {
+    if (!wedding) return [];
+    const parentSlug = String(wedding._id || wedding.name).toLowerCase();
+    return liveOccasions
+      .filter((o) => o.parent && String(o.parent) === String(wedding._id))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name))
+      .map((sub) => ({
+        title: sub.name,
+        href: `/shop?tier=${encodeURIComponent(parentSlug)}&occasion=${encodeURIComponent(String(sub._id || sub.name).toLowerCase())}`,
+        image: sub.image || undefined,
+      }));
+  }, [liveOccasions, wedding]);
+  const showSkeleton = occLoading || occasions.length === 0;
   return (
     <section className="bg-ivory">
       <div className="max-w-[1720px] mx-auto px-6 lg:px-10 pt-10 md:pt-14">
         <SectionHeader
-          title="The Bridal Edit"
-          description="Heirloom silks, woven to remember — temple-border Kanjeevarams, pit-loom Banarasis and double-ikat Patolas for the day you keep."
+          title={headerTitle}
+          description={headerDescription}
           ornament="/homebanner/mangala.png"
           ornamentClassName="h-12 sm:h-14 md:h-16 w-auto select-none"
           dividerClassName="translate-y-[9px]"
@@ -101,7 +117,7 @@ export default function CraftStory() {
           )}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={feature.image}
+            src={bannerImage}
             alt=""
             loading="lazy"
             decoding="async"
@@ -183,48 +199,57 @@ export default function CraftStory() {
           Kalki "Wedding Wardrobe" cards. */}
       <div className="max-w-[1720px] mx-auto px-6 lg:px-10 py-10 md:py-14">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          {occasions.map((o) => {
-            const href = navHref(o.href);
-            const inner = (
-              <>
-                <Image
-                  src={o.image}
-                  alt={o.title}
-                  fill
-                  sizes="(max-width: 768px) 50vw, 25vw"
-                  style={{ objectPosition: o.imagePosition }}
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
+          {showSkeleton
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={`bridal-skel-${i}`}
+                  className="relative block aspect-[2/3] overflow-hidden bg-ink/5 animate-pulse"
+                  aria-hidden
                 />
-                {/* Dark gradient veil — stronger at the bottom so the
-                    title + CTA stay legible on any photo underneath. */}
-                <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/20 to-transparent pointer-events-none" />
-                <div className="absolute inset-x-0 bottom-0 p-3 md:p-7 flex flex-col items-center text-center">
-                  <h3 className="font-display text-xl md:text-2xl lg:text-3xl font-semibold text-ivory leading-tight">
-                    {o.title}
-                  </h3>
-                  <span className="inline-flex items-center justify-center mt-2.5 md:mt-4 bg-white text-ink px-4 py-1.5 md:px-8 md:py-3 text-[0.65rem] md:text-xs font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] group-hover:bg-gold group-hover:text-ink transition-colors">
-                    Shop Now
+              ))
+            : occasions.map((o) => {
+                const href = navHref(o.href);
+                const inner = (
+                  <>
+                    {o.image && (
+                      <Image
+                        src={o.image}
+                        alt={o.title}
+                        fill
+                        sizes="(max-width: 768px) 50vw, 25vw"
+                        className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    )}
+                    {/* Dark gradient veil — stronger at the bottom so the
+                        title + CTA stay legible on any photo underneath. */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/20 to-transparent pointer-events-none" />
+                    <div className="absolute inset-x-0 bottom-0 p-3 md:p-7 flex flex-col items-center text-center">
+                      <h3 className="font-display text-xl md:text-2xl lg:text-3xl font-semibold text-ivory leading-tight">
+                        {o.title}
+                      </h3>
+                      <span className="inline-flex items-center justify-center mt-2.5 md:mt-4 bg-white text-ink px-4 py-1.5 md:px-8 md:py-3 text-[0.65rem] md:text-xs font-bold uppercase tracking-[0.15em] md:tracking-[0.2em] group-hover:bg-gold group-hover:text-ink transition-colors">
+                        Shop Now
+                      </span>
+                    </div>
+                  </>
+                );
+                return href ? (
+                  <Link
+                    key={o.title}
+                    href={href}
+                    className="group relative block aspect-[2/3] overflow-hidden bg-bone"
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <span
+                    key={o.title}
+                    className="group relative block aspect-[2/3] overflow-hidden bg-bone cursor-default"
+                  >
+                    {inner}
                   </span>
-                </div>
-              </>
-            );
-            return href ? (
-              <Link
-                key={o.title}
-                href={href}
-                className="group relative block aspect-[2/3] overflow-hidden bg-bone"
-              >
-                {inner}
-              </Link>
-            ) : (
-              <span
-                key={o.title}
-                className="group relative block aspect-[2/3] overflow-hidden bg-bone cursor-default"
-              >
-                {inner}
-              </span>
-            );
-          })}
+                );
+              })}
         </div>
       </div>
     </section>

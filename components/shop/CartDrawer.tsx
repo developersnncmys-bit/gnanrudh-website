@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { SAREES, formatINR } from '@/lib/sarees';
+import { formatINR } from '@/lib/sarees';
 import { getProductHero } from '@/lib/product-images';
 import { useShop } from '@/lib/shop-store';
 import { useCartDrawer } from '@/lib/cart-drawer';
@@ -18,8 +18,12 @@ export default function CartDrawer() {
   const { openLogin } = useLoginModal();
   const { user, hydrated: authHydrated } = useAuth();
   const {
-    cart, hydrated, cartSubtotal, updateCartQty, removeFromCart,
+    cart, cartItems: items, cartLoading, hydrated, cartSubtotal, updateCartQty, removeFromCart,
   } = useShop();
+  // Resolving = cart has stored ids but the live catalogue hasn't arrived
+  // yet. Keeps the skeleton up so we don't flash EmptyDrawer during the
+  // fetch window when the user actually has items.
+  const resolving = hydrated && cart.length > 0 && items.length === 0 && cartLoading;
 
   useScrollLock(open);
 
@@ -35,13 +39,6 @@ export default function CartDrawer() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, closeCart]);
-
-  const items = cart
-    .map((c) => {
-      const saree = SAREES.find((s) => s.id === c.productId);
-      return saree ? { saree, qty: c.quantity } : null;
-    })
-    .filter((x): x is { saree: (typeof SAREES)[number]; qty: number } => Boolean(x));
 
   const itemCount = items.reduce((sum, i) => sum + i.qty, 0);
   const mrpTotal = items.reduce((sum, i) => sum + i.saree.mrp * i.qty, 0);
@@ -120,7 +117,7 @@ export default function CartDrawer() {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
-          {!hydrated ? (
+          {!hydrated || resolving ? (
             <ListSkeleton />
           ) : items.length === 0 ? (
             <EmptyDrawer onClose={closeCart} />

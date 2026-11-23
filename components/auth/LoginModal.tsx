@@ -4,8 +4,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useLoginModal } from '@/lib/login-modal';
-import { useAuth, deriveNameFromEmail } from '@/lib/auth';
+import { useAuth } from '@/lib/auth';
 import { useScrollLock } from '@/lib/scroll-lock';
+import { ApiError } from '@/lib/api';
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'success';
 
@@ -13,7 +14,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginModal() {
   const { open, closeLogin, loginSucceeded } = useLoginModal();
-  const { signIn } = useAuth();
+  const { signInWithPassword, signUp } = useAuth();
   const [mode, setMode] = useState<Mode>('signin');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -144,27 +145,27 @@ export default function LoginModal() {
     agreed;
   const signInFormValid = emailValid && passwordValid;
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailValid) return setError('Enter a valid email address.');
     if (!passwordValid) return setError('Password must be at least 8 characters.');
     setError(null);
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
-      // Sign-in doesn't collect a name — derive a display name from the
-      // email so the account menu greeting ("Welcome Surabhi!") still
-      // feels personal.
-      signIn({ name: deriveNameFromEmail(email), email: email.trim() });
+    try {
+      await signInWithPassword(email.trim(), password);
       setMode('success');
       setNotice(null);
       // loginSucceeded closes the modal AND fires any pending action
       // (e.g. "open checkout" if the user was gated from the cart).
       setTimeout(() => loginSucceeded(), 1400);
-    }, 700);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Sign in failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     // Defence-in-depth — the submit button is already disabled when the
     // form is invalid, but a keyboard `Enter` could still fire submit.
@@ -181,21 +182,34 @@ export default function LoginModal() {
     }
     setError(null);
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
-      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
-      signIn({
-        name: fullName,
-        email: email.trim(),
+    try {
+      await signUp({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        email: email.trim(),
         mobile: mobile.trim(),
+        password,
         dob,
       });
-      setMode('success');
-      setNotice(null);
-      setTimeout(() => loginSucceeded(), 1400);
-    }, 700);
+      // Account created, but we do NOT auto-login. Route the user back to
+      // the sign-in form with their email pre-filled and a confirmation
+      // notice — they then type their password to sign in.
+      const createdEmail = email.trim();
+      setMode('signin');
+      setEmail(createdEmail);
+      setPassword('');
+      setFirstName('');
+      setLastName('');
+      setMobile('');
+      setDob('');
+      setTouched({});
+      setError(null);
+      setNotice('Account created. Sign in to continue.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Sign up failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleForgot = (e: React.FormEvent) => {
@@ -299,6 +313,15 @@ export default function LoginModal() {
                 <p className="mt-1.5 text-sm text-ink/55 text-center">
                   Welcome back. Enter your details.
                 </p>
+
+                {notice && (
+                  <p
+                    className="mt-4 text-sm text-peacock font-medium text-center"
+                    role="status"
+                  >
+                    {notice}
+                  </p>
+                )}
 
                 <form onSubmit={handleSignIn} className="mt-6 space-y-4" noValidate>
                   <EmailField

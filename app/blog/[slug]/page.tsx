@@ -10,6 +10,8 @@ import {
   type BlogBlock,
   type BlogPost,
 } from '@/lib/blog';
+import { API_URL, type ServerArticle } from '@/lib/api';
+import { mapArticleToPost } from '@/lib/transforms';
 import { navHref } from '@/lib/soft-launch';
 
 const GOLD_GRADIENT =
@@ -17,8 +19,28 @@ const GOLD_GRADIENT =
 
 type Params = { slug: string };
 
-export async function generateStaticParams(): Promise<Params[]> {
-  return BLOG_POSTS.map((p) => ({ slug: p.slug }));
+async function loadPost(slug: string): Promise<BlogPost | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/public/journal/by-slug/${encodeURIComponent(slug)}`, {
+      next: { revalidate: 60 },
+    });
+    if (res.ok) {
+      const a: ServerArticle = await res.json();
+      return mapArticleToPost(a);
+    }
+  } catch {}
+  return getPostBySlug(slug) || null;
+}
+
+async function loadAllPosts(): Promise<BlogPost[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/public/journal?limit=50`, { next: { revalidate: 60 } });
+    if (res.ok) {
+      const data: { items: ServerArticle[] } = await res.json();
+      if (data.items?.length) return data.items.map(mapArticleToPost);
+    }
+  } catch {}
+  return BLOG_POSTS;
 }
 
 export async function generateMetadata({
@@ -27,7 +49,7 @@ export async function generateMetadata({
   params: Promise<Params>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const post = getPostBySlug(slug);
+  const post = await loadPost(slug);
   if (!post) {
     return { title: 'Story not found · House Of GnanRudh' };
   }
@@ -48,15 +70,18 @@ export default async function BlogPostPage({
   params: Promise<Params>;
 }) {
   const { slug } = await params;
-  const post = getPostBySlug(slug);
+  const post = await loadPost(slug);
   if (!post) notFound();
-  const related = getRelatedPosts(slug, 3);
+  const allPosts = await loadAllPosts();
+  // Related posts: by category match if we have enough; else by newest.
+  const related = allPosts
+    .filter((p) => p.slug !== slug && p.category === post.category)
+    .slice(0, 3);
   const headings = post.body.filter((b) => b.type === 'h2');
 
-  // Build prev / next by publish order (newest first in BLOG_POSTS already).
-  const idx = BLOG_POSTS.findIndex((p) => p.slug === slug);
-  const prev = idx > 0 ? BLOG_POSTS[idx - 1] : null;
-  const next = idx < BLOG_POSTS.length - 1 ? BLOG_POSTS[idx + 1] : null;
+  const idx = allPosts.findIndex((p) => p.slug === slug);
+  const prev = idx > 0 ? allPosts[idx - 1] : null;
+  const next = idx >= 0 && idx < allPosts.length - 1 ? allPosts[idx + 1] : null;
 
   const blogHref = navHref('/blog');
 
@@ -95,7 +120,7 @@ export default async function BlogPostPage({
                   More From the Journal
                 </div>
                 <ol className="space-y-4">
-                  {BLOG_POSTS.slice(0, 5).map((p, i) => (
+                  {allPosts.slice(0, 5).map((p, i) => (
                     <li key={p.slug} className="flex gap-3 items-start">
                       <span
                         className="font-display text-lg leading-none tabular-nums shrink-0 mt-0.5"

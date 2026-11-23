@@ -4,6 +4,9 @@ import {
   PolicyContactStrip,
   PolicyHeader,
 } from '@/components/policy/PolicyChrome';
+import LegalShell from '@/components/legal/LegalShell';
+import { fetchCmsPage } from '@/lib/cms';
+import { parseCmsBody, isStubBody } from '@/lib/cms-markdown';
 
 export const metadata: Metadata = {
   title: 'Return, Replacement & Refund Policy · House Of GnanRudh',
@@ -11,7 +14,28 @@ export const metadata: Metadata = {
     'House Of GnanRudh return, replacement and refund policy — eligibility, 48-hour window, mandatory unboxing video, refund timelines and contact information.',
 };
 
-export default function ReturnsPage() {
+// Admin CMS page name — non-stub body overrides the bespoke page below.
+// Returns policy also substitutes {{returnWindow}} etc. on the server side
+// before the body reaches us (see backend/routes/public.js).
+const CMS_NAME = 'Returns policy';
+
+export default async function ReturnsPage() {
+  const page = await fetchCmsPage(CMS_NAME);
+  if (page && !isStubBody(page.body)) {
+    const parsed = parseCmsBody(page.body || '');
+    return (
+      <LegalShell
+        title={page.name || 'Return, Replacement & Refund Policy'}
+        lastUpdated={page.updated || ''}
+        intro={parsed.intro}
+        sections={parsed.sections}
+      />
+    );
+  }
+  return <ReturnsFallback />;
+}
+
+function ReturnsFallback() {
   return (
     <main className="bg-white text-gray-900">
       <PolicyHeader

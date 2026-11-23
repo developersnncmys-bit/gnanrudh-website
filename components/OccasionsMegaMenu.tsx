@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import clsx from 'clsx';
+import type { ServerOccasion } from '@/lib/api';
 
 /**
  * OccasionsMegaMenu — Nalli-style nested occasion picker, Kalki-style
@@ -50,15 +51,54 @@ export const GROUPS: Group[] = [
   },
 ];
 
+// Merge live admin occasions into the static group set — the sidebar shows
+// top-level (parent=null) occasions, and each parent's tiles come from its
+// children in the same collection. When a parent has no children yet, we
+// fall back to the hardcoded tiles whose group id or label match the parent
+// (case-insensitive) so sub-occasions can roll out gradually. Falls back to
+// the shipped GROUPS entirely when the backend returns nothing so the menu
+// never flashes empty.
+export function buildOccasionsGroups(occasions: ServerOccasion[]): Group[] {
+  const parents = occasions.filter((o) => !o.parent);
+  if (!parents.length) return GROUPS;
+  return parents.map((p) => {
+    const parentSlug = String(p._id || p.name).toLowerCase();
+    const subs = occasions
+      .filter((o) => o.parent && String(o.parent) === String(p._id))
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+    if (subs.length) {
+      const tiles: Tile[] = subs.map((s) => ({
+        label: s.name,
+        href: `/shop?tier=${encodeURIComponent(parentSlug)}&occasion=${encodeURIComponent(String(s._id || s.name).toLowerCase())}`,
+        image: s.image || undefined,
+      }));
+      return { id: p._id || p.name, label: p.name, tiles };
+    }
+    // No live sub-occasions yet — reuse any matching hardcoded tile set.
+    const match = GROUPS.find(
+      (g) =>
+        g.id.toLowerCase() === parentSlug ||
+        g.label.toLowerCase() === p.name.toLowerCase(),
+    );
+    return {
+      id: p._id || p.name,
+      label: p.name,
+      tiles: match?.tiles ?? [],
+    };
+  });
+}
+
 export default function OccasionsMegaMenu({
   open,
   onClose,
+  groups = GROUPS,
 }: {
   open: boolean;
   onClose: () => void;
+  groups?: Group[];
 }) {
-  const [activeId, setActiveId] = useState(GROUPS[0].id);
-  const active = GROUPS.find((g) => g.id === activeId) ?? GROUPS[0];
+  const [activeId, setActiveId] = useState(groups[0].id);
+  const active = groups.find((g) => g.id === activeId) ?? groups[0];
 
   return (
     <div
@@ -74,7 +114,7 @@ export default function OccasionsMegaMenu({
       <div className="max-w-[1720px] mx-auto px-6 lg:px-10 py-6 flex gap-8">
         <aside className="w-72 shrink-0 bg-bone -my-6 -ml-6 lg:-ml-10 py-8 pl-11 lg:pl-[60px] pr-5">
           <nav className="flex flex-col">
-            {GROUPS.map((g) => {
+            {groups.map((g) => {
               const isActive = g.id === activeId;
               return (
                 <button

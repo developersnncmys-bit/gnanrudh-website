@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  // Static export removed — the storefront now fetches live catalog/auth/order
+  // data from the Express backend. A standard Next.js build serves product and
+  // blog pages at request time (ISR/SSR-friendly).
   // Disabled: React 18 strict mode double-invokes effects in dev, which
   // interacts badly with GSAP ScrollTrigger cleanup in Next.js 14.2.13 and
   // surfaces NotFoundError ("removeChild") during navigation.
@@ -11,6 +13,13 @@ const nextConfig = {
     // every image (sharp likely failed to bind). Bypass the optimizer and
     // serve files directly from /public.
     unoptimized: true,
+    // Cloudinary-hosted product images uploaded via the admin panel. Local-disk
+    // uploads during dev also need to be whitelisted when the admin runs on :4000.
+    remotePatterns: [
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'http', hostname: '127.0.0.1' },
+    ],
   },
   // Tree-shake `react-icons` per-glyph. Without this, every
   // `import { LuSearch, LuHeart } from 'react-icons/lu'` pulls in the

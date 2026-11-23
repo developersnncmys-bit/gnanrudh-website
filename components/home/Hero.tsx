@@ -4,84 +4,108 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
+import { heroSlidesApi, type ServerHeroSlide } from '@/lib/api';
 
 /**
- * Hero — promotional campaign banner carousel. Each slide is a themed
- * poster (Festive New Arrivals, Bridal, Banarasi, Patola, Mysore Silk)
- * rather than a product spotlight. Text alternates left/right side so
- * no two consecutive slides sit identically — gives the carousel a
- * rhythm instead of looking like the same layout re-coloured.
+ * Hero — promotional campaign banner carousel. Every slide (image, copy,
+ * CTA, badge, text side, focal point) comes from the admin's "Home hero
+ * slides" collection. Until the fetch returns at least one visible slide,
+ * the hero renders a dark skeleton — no hardcoded fallback content.
  */
 
 type Slide = {
   id: string;
   image: string;
-  // Mobile-specific crop. Rendered via <picture><source media="(max-width:
-  // 767px)"> so phones download ONLY this file and desktops download
-  // ONLY `image`. Falls back to `image` when omitted.
   mobileImage?: string;
   objectPosition?: string;
-  // Alternates across the array so each neighbour differs.
   textSide: 'left' | 'right';
   eyebrow: string;
   headline: string;
   supporting: string;
-  ctaLabel: string;
-  ctaHref: string;
-  // Optional accent chip above the eyebrow (e.g. "New", "Limited").
+  // The CTA is rendered statically in the render tree — no per-slide label
+  // or href. Fields intentionally omitted.
   badge?: { label: string; tone: 'maroon' | 'gold' };
 };
 
-const SLIDES: Slide[] = [
-  {
-    id: 'festive-new-arrivals',
-    image: '/homebanner/saree1.webp',
-    mobileImage: '/homebanner/mob-saree1.webp',
-    objectPosition: '50% 25%',
-    textSide: 'right',
-    eyebrow: 'Festive',
-    headline: 'New Arrivals',
-    supporting:
-      'Over 200 handwoven heirloom pieces added this season — kanjeevarams, banarasis, patolas and more.',
-    ctaLabel: 'Shop New',
-    ctaHref: '/shop?sort=new',
-    badge: { label: 'Just In', tone: 'gold' },
-  },
-  {
-    id: 'bridal-edit',
-    image: '/homebanner/saree2.webp',
-    mobileImage: '/homebanner/mob-saree2.webp',
-    objectPosition: '50% 22%',
-    textSide: 'right',
-    eyebrow: 'Wedding Season',
-    headline: 'The Bridal Edit',
-    supporting:
-      'Temple-border kanjeevarams and pit-loom banarasis — heirloom silks, woven for the day you remember.',
-    ctaLabel: 'Shop Bridal',
-    ctaHref: '/shop?tier=bridal',
-    badge: { label: 'Signature', tone: 'gold' },
-  },
-];
-
 const DEFAULT_OBJECT_POSITION = '50% 25%';
+
+// Map a raw admin row onto the Slide shape the render loop expects. Empty
+// strings are normalised away so `&&` checks render clean markup.
+function toSlide(r: ServerHeroSlide): Slide {
+  return {
+    id: r._id,
+    image: r.image,
+    mobileImage: r.mobileImage || undefined,
+    objectPosition: r.objectPosition || undefined,
+    textSide: r.textSide === 'left' ? 'left' : 'right',
+    eyebrow: r.eyebrow || '',
+    headline: r.headline,
+    supporting: r.supporting || '',
+    badge: r.badgeLabel
+      ? { label: r.badgeLabel, tone: r.badgeTone === 'maroon' ? 'maroon' : 'gold' }
+      : undefined,
+  };
+}
+
+// Dimensions shared between the live carousel and the loading skeleton so
+// the hero never jumps height on first paint.
+const HERO_SECTION_CLASS =
+  'relative w-full h-[calc(88vh+6px)] sm:h-[calc(78vh-10px)] lg:h-[calc(85vh-10px)] xl:h-[calc(78vh-10px)] min-h-[526px] sm:min-h-[510px] md:min-h-[560px] lg:min-h-[720px] xl:min-h-[560px] max-h-[820px] lg:max-h-[1100px] xl:max-h-[820px] bg-[#1B0E0A] overflow-hidden';
+
+function HeroSkeleton() {
+  return (
+    <section className={HERO_SECTION_CLASS} aria-busy="true">
+      <div
+        className="absolute inset-0 animate-pulse"
+        style={{
+          background:
+            'linear-gradient(135deg, #1B0E0A 0%, #2a1812 50%, #1B0E0A 100%)',
+        }}
+      />
+    </section>
+  );
+}
 
 export default function Hero() {
   const [active, setActive] = useState(0);
+  // Visible slides from the admin's /api/public/hero-slides endpoint. Rows
+  // without an uploaded image are dropped so a half-configured slide never
+  // renders an empty frame. Until the fetch lands and returns at least one
+  // usable slide, the hero stays on the skeleton.
+  const [slides, setSlides] = useState<Slide[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setActive((a) => (a + 1) % SLIDES.length);
-    }, 7000);
-    return () => clearInterval(id);
+    let alive = true;
+    heroSlidesApi.list()
+      .then((res) => {
+        if (!alive) return;
+        const rows = (res.items || []).filter((r) => r.image && r.headline);
+        setSlides(rows.map(toSlide));
+      })
+      .catch(() => { /* leave slides empty — skeleton stays */ })
+      .finally(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
   }, []);
 
-  const next = () => setActive((a) => (a + 1) % SLIDES.length);
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const id = setInterval(() => {
+      setActive((a) => (a + 1) % slides.length);
+    }, 7000);
+    return () => clearInterval(id);
+  }, [slides.length]);
+
+  const next = () => setActive((a) => (a + 1) % slides.length);
   const prev = () =>
-    setActive((a) => (a - 1 + SLIDES.length) % SLIDES.length);
+    setActive((a) => (a - 1 + slides.length) % slides.length);
+
+  // Fetch in flight OR admin has uploaded no banners → skeleton, no copy.
+  if (!loaded || !slides.length) return <HeroSkeleton />;
 
   return (
-    <section className="relative w-full h-[calc(88vh+6px)] sm:h-[calc(78vh-10px)] lg:h-[calc(85vh-10px)] xl:h-[calc(78vh-10px)] min-h-[526px] sm:min-h-[510px] md:min-h-[560px] lg:min-h-[720px] xl:min-h-[560px] max-h-[820px] lg:max-h-[1100px] xl:max-h-[820px] bg-[#1B0E0A] overflow-hidden">
-      {SLIDES.map((slide, i) => {
+    <section className={HERO_SECTION_CLASS}>
+      {slides.map((slide, i) => {
         const isLeft = slide.textSide === 'left';
         return (
           <div
@@ -190,11 +214,14 @@ export default function Hero() {
                 <p className="text-xs md:text-base text-ivory/80 leading-relaxed mb-4 md:mb-7 max-w-md mx-auto md:mx-0">
                   {slide.supporting}
                 </p>
+                {/* CTA button — static across every slide. The admin no
+                    longer controls the label or link; both are fixed so the
+                    hero always drops visitors onto the New Arrivals edit. */}
                 <Link
-                  href={slide.ctaHref}
+                  href="/shop?sort=new"
                   className="inline-flex items-center bg-white hover:bg-gold text-ink hover:text-ink px-5 sm:px-7 py-2 sm:py-3 text-[0.7rem] sm:text-sm font-bold uppercase tracking-[0.15em] sm:tracking-[0.18em] rounded-sm transition-colors"
                 >
-                  {slide.ctaLabel}
+                  Shop New
                 </Link>
               </div>
             </div>

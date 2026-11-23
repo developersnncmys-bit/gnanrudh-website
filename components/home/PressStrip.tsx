@@ -1,43 +1,41 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES, formatINR, TIERS } from '@/lib/sarees';
+import { formatINR, TIERS, type Saree } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import WishlistButton from '@/components/shop/WishlistButton';
 import AddToCartButton from '@/components/shop/AddToCartButton';
 import ViewSimilarButton from '@/components/shop/ViewSimilarButton';
 import { navHref } from '@/lib/soft-launch';
 
+// Anything at or below this count is treated as "selling fast". Backend's
+// overlayLiveStock on /api/public/products rewrites each variant's stock
+// field with the real count of pieces in "In stock" status, so this
+// threshold is applied against live inventory — not stale seed values.
+const LOW_STOCK_THRESHOLD = 5;
 // Kept at 10 so the desktop view of 5-per-row scrolls cleanly to a second
-// page of 5 without showing the previous page's cards again. (At 8, one
-// page-scroll was landing the rail at the end and visibly repeating the
-// last two cards from page 1.)
-const trendingIds = [
-  'banarasi-jamawar',
-  'mysore-tara',
-  'mangalagiri-megha',
-  'patola-rasleela',
-  'pochampally-aakash',
-  'mixedpattu-katha',
-  'banarasi-saanjh',
-  'kanjivaram-mayura',
-  'gadwal-konark',
-  'fancy-cocktail',
-];
+// page of 5. Set as a cap; if fewer than 10 products are low-stock the
+// rail just shows what qualifies.
+const MAX_CARDS = 10;
 
-const stockLeft: Record<string, number> = {
-  'banarasi-jamawar': 2,
-  'mysore-tara': 4,
-  'mangalagiri-megha': 1,
-  'patola-rasleela': 1,
-  'pochampally-aakash': 6,
-  'mixedpattu-katha': 3,
-  'banarasi-saanjh': 5,
-  'kanjivaram-mayura': 2,
-  'gadwal-konark': 2,
-  'fancy-cocktail': 1,
-};
+// Sum the live stock across every colour variant. Products with no variants
+// or no stock field get a `null` sentinel so they're excluded from the
+// "low stock" rail — we don't want sarees with unknown inventory showing
+// up next to accurate counts.
+function totalStock(s: Saree): number | null {
+  if (!s.variants || s.variants.length === 0) return null;
+  let sum = 0;
+  let anyKnown = false;
+  for (const v of s.variants) {
+    if (typeof v.stock === 'number') {
+      sum += v.stock;
+      anyKnown = true;
+    }
+  }
+  return anyKnown ? sum : null;
+}
 
 export default function PressStrip() {
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -72,9 +70,28 @@ export default function PressStrip() {
     el.scrollBy({ left: dir * (el.clientWidth + 16), behavior: 'smooth' });
   };
 
-  const items = trendingIds
-    .map((id) => SAREES.find((s) => s.id === id))
-    .filter((s): s is (typeof SAREES)[number] => Boolean(s));
+  const { sarees: liveSarees, loading } = useLiveSarees();
+
+  // Pick products whose total live stock is > 0 and ≤ threshold, then
+  // surface the most urgent (lowest count) first so shoppers see the
+  // scarcest items at the top of the rail. Sarees with unknown stock
+  // (null from totalStock) drop out — we only show cards we can trust.
+  const items = useMemo(() => {
+    const scored: { saree: Saree; stock: number }[] = [];
+    for (const s of liveSarees) {
+      const stock = totalStock(s);
+      if (stock === null) continue;
+      if (stock <= 0 || stock > LOW_STOCK_THRESHOLD) continue;
+      scored.push({ saree: s, stock });
+    }
+    scored.sort((a, b) => a.stock - b.stock);
+    return scored.slice(0, MAX_CARDS);
+  }, [liveSarees]);
+
+  // Hide the whole section while the catalogue is still loading (to avoid
+  // flashing a header with no cards) and when nothing qualifies as low
+  // stock (common on a fresh DB or after a restock).
+  if (loading || items.length === 0) return null;
 
   return (
     <section className="bg-white py-10 md:py-14">
@@ -130,8 +147,7 @@ export default function PressStrip() {
           ref={railRef}
           className="flex gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-2"
         >
-          {items.map((saree) => {
-            const stock = stockLeft[saree.id] ?? 5;
+          {items.map(({ saree, stock }) => {
             const tier = TIERS[saree.tier];
             const productHref = navHref(`/shop/${saree.id}`);
             const CardTag = productHref ? Link : 'span';

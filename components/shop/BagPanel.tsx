@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES, formatINR } from '@/lib/sarees';
+import { formatINR } from '@/lib/sarees';
 import { getProductHero } from '@/lib/product-images';
 import { useShop } from '@/lib/shop-store';
 import { useLoginModal } from '@/lib/login-modal';
@@ -15,8 +15,9 @@ export default function BagPanel({
   heading: { title: string; sub: string };
 }) {
   const {
-    cart, hydrated, cartSubtotal, updateCartQty, removeFromCart, clearCart,
+    cart, cartItems: items, cartLoading, hydrated, cartSubtotal, updateCartQty, removeFromCart, clearCart,
   } = useShop();
+  const resolving = hydrated && cart.length > 0 && items.length === 0 && cartLoading;
   const { openLogin } = useLoginModal();
   const { openCheckout } = useCheckoutModal();
   const { user, hydrated: authHydrated } = useAuth();
@@ -32,19 +33,13 @@ export default function BagPanel({
     openCheckout();
   };
 
-  const items = cart
-    .map((c) => {
-      const saree = SAREES.find((s) => s.id === c.productId);
-      return saree ? { saree, qty: c.quantity } : null;
-    })
-    .filter((x): x is { saree: (typeof SAREES)[number]; qty: number } => Boolean(x));
-
   const itemCount = items.reduce((sum, i) => sum + i.qty, 0);
 
   // Empty state owns the full viewport in Kalki style — centered headline +
   // big CTA + login prompt. No breadcrumb / header chrome that would weigh
-  // down a zero-state page.
-  if (hydrated && items.length === 0) {
+  // down a zero-state page. Suppress during `resolving` so the live-catalog
+  // fetch doesn't flash EmptyState over a cart that actually has items.
+  if (hydrated && !resolving && items.length === 0) {
     return <EmptyState openLogin={openLogin} />;
   }
 

@@ -12,6 +12,7 @@ import {
   sareeMatchesOccasion,
   getSareeColorGroup,
 } from '@/lib/sarees';
+import { useLiveSarees, useLiveCategories } from '@/lib/catalog';
 import type { Tier, Weave } from '@/lib/sarees';
 import { SOFT_LAUNCH } from '@/lib/soft-launch';
 import NewArrivalsView from './NewArrivalsView';
@@ -56,6 +57,7 @@ const isOnSale = (s: (typeof SAREES)[number]) => s.price < SALE_THRESHOLD;
 function parseFiltersFromSearch(params: URLSearchParams): FilterState {
   const tierCsv = params.get('tier');
   const weaveCsv = params.get('weave');
+  const catCsv = params.get('cat');
   const bracket = params.get('bracket');
   const sale = params.get('sale') === '1';
   const colorCsv = params.get('color');
@@ -66,12 +68,18 @@ function parseFiltersFromSearch(params: URLSearchParams): FilterState {
   const weaves = weaveCsv
     ? (weaveCsv.split(',') as Weave[])
     : [];
+  // `cat=` is CSV so the Shop-by-Category filter can round-trip multi-select.
+  // Single-id navbar deep links (`?cat=<id>`) split into a one-entry array —
+  // same filter path.
+  const categories = catCsv
+    ? catCsv.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
   const validColorIds = new Set(STANDARD_COLORWAYS.map((c) => c.id));
   const colors = colorCsv
     ? colorCsv.split(',').filter((id) => validColorIds.has(id))
     : [];
 
-  return { tiers, weaves, bracket, sale, colors };
+  return { tiers, weaves, categories, bracket, sale, colors };
 }
 
 function writeFiltersToSearch(
@@ -83,6 +91,8 @@ function writeFiltersToSearch(
   else next.delete('tier');
   if (filters.weaves.length) next.set('weave', filters.weaves.join(','));
   else next.delete('weave');
+  if (filters.categories.length) next.set('cat', filters.categories.join(','));
+  else next.delete('cat');
   if (filters.bracket) next.set('bracket', filters.bracket);
   else next.delete('bracket');
   if (filters.sale) next.set('sale', '1');
@@ -96,6 +106,14 @@ export default function ShopView() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // Live catalog from the backend — no static fallback. When the admin has
+  // no live products, the grid renders skeleton cards while loading and
+  // keeps them (or shows an empty state) when the fetch resolves empty.
+  const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Backend categories — used to label the filter chip row and to enumerate
+  // the set of ids we count products against. Falls back to empty while the
+  // fetch is in flight; the rail just renders no chip labels yet.
+  const { categories: liveCategoriesAll } = useLiveCategories();
 
   // Soft-launch gate — only the live /shop URLs are let through. Any
   // other query (or none at all) bounces home. Lives here instead of
@@ -119,6 +137,8 @@ export default function ShopView() {
     'pmin', 'pmax',
     'weave', 'tier', 'occasion', 'sort', 'sale',
     'minPrice', 'maxPrice', 'wishlist',
+    // Live admin categories — navbar links use `?cat=<id>`.
+    'cat',
   ]);
   // Live-landing helper — given a predicate for the "primary" keys that
   // define the landing, returns true when the URL carries only those
@@ -170,6 +190,12 @@ export default function ShopView() {
     if (searchParams.get('sort') !== 'bestseller') return false;
     return hasOnlyAllowedExtras(new Set(['sort']));
   })();
+  // Live-category landing — `?cat=<id>` from the navbar categories. Any
+  // value passes the gate; the server returns {} if the id doesn't exist.
+  const isLiveCategory = (() => {
+    if (!searchParams.get('cat')) return false;
+    return hasOnlyAllowedExtras(new Set(['cat']));
+  })();
   // Bare /shop (no query params) OR any /shop?view=all[&…filters] drill-down
   // — the "All Sarees" landing + its in-drawer filter permutations.
   const isLiveAll =
@@ -184,7 +210,8 @@ export default function ShopView() {
     !isLiveSale &&
     !isLiveTier &&
     !isLivePriceRange &&
-    !isLiveBestseller;
+    !isLiveBestseller &&
+    !isLiveCategory;
   useEffect(() => {
     if (softGated) router.replace('/');
   }, [softGated, router]);
@@ -257,10 +284,22 @@ export default function ShopView() {
 
   // ── Filter + sort the catalog ─────────────────────────────────────────
   const filtered = useMemo(() => {
-    let items = SAREES.slice();
+    let items = liveSarees.slice();
 
     if (filters.tiers.length) {
-      items = items.filter((s) => filters.tiers.includes(s.tier));
+      // Prefer admin-tagged occasions over the auto-computed price tier:
+      // a product the admin flagged as Festive shouldn't leak into the
+      // Bridal bucket just because its price falls in that band. Legacy
+      // records with no occasions tagged still fall back to `s.tier`.
+      items = items.filter((s) => {
+        const occs = (s.occasions || []).map((o) => o.toLowerCase());
+        if (occs.length) {
+          return filters.tiers.some((t) =>
+            occs.some((o) => o.includes(t.toLowerCase())),
+          );
+        }
+        return filters.tiers.includes(s.tier);
+      });
     }
     if (filters.weaves.length) {
       items = items.filter((s) => filters.weaves.includes(s.weave));
@@ -292,6 +331,15 @@ export default function ShopView() {
     if (occasion) {
       items = items.filter((s) => sareeMatchesOccasion(s, occasion));
     }
+    // Admin-managed category filter (`?cat=<id1,id2>`). Written by the
+    // Shop-by-Category filter section and by navbar `?cat=<id>` deep links.
+    // The transform stores the backend's category id in `saree.region`,
+    // so the match is direct against the list of selected ids.
+    // Static-only sarees never carry a category id and are excluded — the
+    // live DB is the source of truth for category landings.
+    if (filters.categories.length) {
+      items = items.filter((s) => filters.categories.includes(s.region));
+    }
     if (filters.sale) {
       items = items.filter(isOnSale);
     }
@@ -317,7 +365,7 @@ export default function ShopView() {
         break;
     }
     return items;
-  }, [filters, sort, searchParams]);
+  }, [filters, sort, searchParams, liveSarees]);
 
   // ── Pre-computed counts for the filter rail ───────────────────────────
   const counts = useMemo(() => {
@@ -326,20 +374,36 @@ export default function ShopView() {
       festive: 0,
       everyday: 0,
     };
-    const weaveCounts: Record<string, number> = {};
+    // Category counts are keyed by backend `Category._id`. The transform
+    // keeps the server's `cat` in `saree.region`, so we tally by that.
+    const categoryCounts: Record<string, number> = {};
     const colorCounts: Record<string, number> = {};
     let saleCount = 0;
-    SAREES.forEach((s) => {
-      tierCounts[s.tier] += 1;
-      weaveCounts[s.weave] = (weaveCounts[s.weave] ?? 0) + 1;
+    // Tier counts follow the same occasion-first rule as the filter
+     // itself (see the `filters.tiers` block above). A product's admin
+     // occasions name-match wins; legacy records with no occasions tagged
+     // fall back to the price-derived `s.tier` so nothing uncounted.
+    const TIER_KEYS: Tier[] = ['bridal', 'festive', 'everyday'];
+    liveSarees.forEach((s) => {
+      const occs = (s.occasions || []).map((o) => o.toLowerCase());
+      if (occs.length) {
+        for (const t of TIER_KEYS) {
+          if (occs.some((o) => o.includes(t))) tierCounts[t] += 1;
+        }
+      } else {
+        tierCounts[s.tier] += 1;
+      }
+      if (s.region) {
+        categoryCounts[s.region] = (categoryCounts[s.region] ?? 0) + 1;
+      }
       if (isOnSale(s)) saleCount += 1;
       // Each saree belongs to exactly one colour group (nearest standard
       // colorway by RGB distance), so counts sum cleanly to catalog size.
       const group = getSareeColorGroup(s);
       colorCounts[group] = (colorCounts[group] ?? 0) + 1;
     });
-    return { tier: tierCounts, weave: weaveCounts, color: colorCounts, sale: saleCount };
-  }, []);
+    return { tier: tierCounts, category: categoryCounts, color: colorCounts, sale: saleCount };
+  }, [liveSarees]);
 
   // ── Page heading derived from filter state ────────────────────────────
   const heading = useMemo(() => {
@@ -362,6 +426,7 @@ export default function ShopView() {
     mode === 'grid' &&
     !filters.tiers.length &&
     !filters.weaves.length &&
+    !filters.categories.length &&
     !filters.bracket &&
     !filters.sale &&
     !filters.colors.length;
@@ -371,6 +436,7 @@ export default function ShopView() {
   const hasActiveFilters =
     filters.tiers.length > 0 ||
     filters.weaves.length > 0 ||
+    filters.categories.length > 0 ||
     !!filters.bracket ||
     filters.sale ||
     filters.colors.length > 0;
@@ -525,6 +591,16 @@ export default function ShopView() {
                   onRemove={() => onFilterChange({ ...filters, weaves: filters.weaves.filter((x) => x !== w) })}
                 />
               ))}
+              {filters.categories.map((id) => {
+                const label = liveCategoriesAll.find((c) => c._id === id)?.name ?? id;
+                return (
+                  <FilterChip
+                    key={`cat-${id}`}
+                    label={label}
+                    onRemove={() => onFilterChange({ ...filters, categories: filters.categories.filter((x) => x !== id) })}
+                  />
+                );
+              })}
               {filters.bracket && (
                 <FilterChip
                   label={PRICE_BRACKETS.find((b) => b.id === filters.bracket)?.label ?? 'Price'}
@@ -592,7 +668,23 @@ export default function ShopView() {
           </div>
 
           <div className="flex-1 min-w-0">
-            {filtered.length === 0 ? (
+            {(sareesLoading || liveSarees.length === 0) ? (
+              // Fetch in flight OR admin has no live products — skeleton grid
+              // in the same shape as the real grid so nothing shifts when
+              // real cards land.
+              <div
+                className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-3 gap-y-6 lg:gap-x-4 lg:gap-y-7"
+                aria-busy="true"
+              >
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={`shop-skel-${i}`} aria-hidden>
+                    <div className="relative overflow-hidden bg-ink/5 aspect-[4/5] rounded-sm animate-pulse" />
+                    <div className="h-4 mt-3 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                    <div className="h-4 mt-2 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="text-center py-16 max-w-md mx-auto">
                 <h2 className="text-lg font-bold text-gray-900 mb-2">No results found</h2>
                 <p className="text-sm text-gray-600 mb-5">

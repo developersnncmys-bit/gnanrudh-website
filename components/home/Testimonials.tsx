@@ -1,6 +1,10 @@
+'use client';
+
+import { useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES } from '@/lib/sarees';
+import { SAREES, type Saree } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import { navHref } from '@/lib/soft-launch';
 
 type Review = {
@@ -62,6 +66,22 @@ function StarRow({ rating = 5 }: { rating?: number }) {
 }
 
 export default function Testimonials() {
+  // Pair each hardcoded review with a live bestseller-tagged product so
+  // the imagery + PDP links are driven by what the admin currently flags
+  // as a hero piece. Falls back to each review's original hardcoded
+  // productId (via the static SAREES seed) when no bestseller is live yet
+  // — avoids an empty section on a fresh DB.
+  const { sarees: liveSarees } = useLiveSarees();
+  const cards = useMemo(() => {
+    const bestSellers = liveSarees.filter((s) => s.badges.includes('bestseller'));
+    return reviews.map((r, i) => {
+      const live = bestSellers[i];
+      const fallback = SAREES.find((s) => s.id === r.productId);
+      const product: Saree | undefined = live || fallback;
+      return { review: r, product };
+    });
+  }, [liveSarees]);
+
   return (
     <section className="bg-white pt-10 md:pt-14 pb-12 md:pb-16">
       <div className="max-w-[1480px] mx-auto px-6 lg:px-10">
@@ -83,13 +103,12 @@ export default function Testimonials() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 md:gap-6">
-          {reviews.map((r) => {
-            const product = SAREES.find((s) => s.id === r.productId);
+          {cards.map(({ review: r, product }) => {
             if (!product) return null;
             const productHref = navHref(`/shop/${product.id}`);
             return (
               <article
-                key={r.customer + r.productId}
+                key={r.customer + product.id}
                 className="group bg-white border border-ink/10 overflow-hidden"
               >
                 <div className="grid grid-cols-5">

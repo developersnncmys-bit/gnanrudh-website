@@ -16,13 +16,14 @@ import {
 import { PiStorefront } from 'react-icons/pi';
 import AnimatedSearchBar from '@/components/AnimatedSearchBar';
 import PromoStrip from '@/components/PromoStrip';
-import ShopAllMegaMenu, { GROUPS as SHOP_ALL_GROUPS } from '@/components/ShopAllMegaMenu';
-import OccasionsMegaMenu, { GROUPS as OCCASIONS_GROUPS } from '@/components/OccasionsMegaMenu';
+import ShopAllMegaMenu, { buildShopAllGroups } from '@/components/ShopAllMegaMenu';
+import OccasionsMegaMenu, { buildOccasionsGroups } from '@/components/OccasionsMegaMenu';
 import { useShop } from '@/lib/shop-store';
 import { useCartDrawer } from '@/lib/cart-drawer';
 import { useScrollLock } from '@/lib/scroll-lock';
 import AccountMenu from '@/components/auth/AccountMenu';
 import { SAREES, formatINR } from '@/lib/sarees';
+import { useLiveCategories, useLivePriceRanges, useLiveOccasions, useLiveSarees } from '@/lib/catalog';
 import { CART_DISABLED, WISHLIST_DISABLED } from '@/lib/soft-launch';
 
 // Popular Choices — surfaced in the search panel as quick-filter pills.
@@ -35,11 +36,6 @@ const POPULAR_CHOICES = [
   { label: 'Mysore Silk', href: '/shop?weave=Mysore+Silk' },
   { label: 'Patola Sarees', href: '/shop?weave=Patola' },
 ];
-
-// Picks for the "Recommended For You" grid in the search panel. Shown
-// as a 2-column vertical grid, so enough entries to make the scroll
-// feel inhabited rather than a one-screen afterthought.
-const RECOMMENDED = SAREES.slice(0, 10);
 
 // Tier categories — kept as a separate array so they can carry a subtle
 // weight distinction from the weaves in the centred sub-row. Occasion
@@ -57,9 +53,14 @@ const sectionLinks: { href: string; label: string }[] = [];
 // See memory: project_pages_unlinked_soft_launch.
 const SOFT_LAUNCH = true;
 
-// Sub-row — streamlined main nav. "New Arrivals" keeps the maroon accent
-// (highlight recent stock); "Sale" keeps the box accent at the end.
-const weaveLinks = [
+// Sub-row shape. Entries between "New Arrivals" and "Shop All" are the
+// weave/category links. By default we ship a static fallback (used on
+// first paint and when the backend has no visible categories); the live
+// nav fetches `/api/public/categories` and swaps the middle section in
+// once the response lands.
+type WeaveLink = { href: string; label: string; accent?: 'maroon' | 'box'; live?: boolean };
+
+const WEAVE_LINKS_FALLBACK: WeaveLink[] = [
   { href: '/', label: 'Home' },
   { href: '/shop?sort=new', label: 'New Arrivals' },
   { href: '/shop?weave=Kanjivaram', label: 'Kanjeevaram' },
@@ -70,6 +71,19 @@ const weaveLinks = [
   { href: '/shop?weave=Gadwal', label: 'Gadwal' },
   { href: '/shop?weave=Patola', label: 'Patola' },
   { href: '/shop?weave=Fancy+Sarees', label: 'Fancy Sarees' },
+  { href: '/shop', label: 'Shop All' },
+  { href: '/shop?view=occasions', label: 'Occasions' },
+  { href: '/shop?sale=1', label: 'Sale', accent: 'box' },
+];
+
+// Shell entries that always appear — the live categories slot into the
+// gap between them. Keeping the shell constant keeps "Home / Shop All /
+// Occasions / Sale" from flickering while the categories fetch resolves.
+const WEAVE_LINKS_SHELL_HEAD: WeaveLink[] = [
+  { href: '/', label: 'Home' },
+  { href: '/shop?sort=new', label: 'New Arrivals' },
+];
+const WEAVE_LINKS_SHELL_TAIL: WeaveLink[] = [
   { href: '/shop', label: 'Shop All' },
   { href: '/shop?view=occasions', label: 'Occasions' },
   { href: '/shop?sale=1', label: 'Sale', accent: 'box' },
@@ -125,10 +139,14 @@ function navHref(href: string): string | undefined {
   if (!SOFT_LAUNCH) return href;
   if (SOFT_LAUNCH_LIVE.has(href)) return href;
   // Product detail routes — any /shop/<id> path is live.
-  const [path] = href.split('?');
+  const [path, query = ''] = href.split('?');
   if (path.startsWith('/shop/') && path.length > '/shop/'.length) {
     return href;
   }
+  // Admin-managed categories come in as /shop?cat=<id>. Allow them through
+  // the soft-launch gate — their contents are the admin's decision, not the
+  // hard-coded allow list.
+  if (path === '/shop' && new URLSearchParams(query).get('cat')) return href;
   return undefined;
 }
 
@@ -195,6 +213,71 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
   const { cartCount, wishlistCount, hydrated } = useShop();
   const { openCart } = useCartDrawer();
 
+  // Live categories from the admin panel. First paint uses the static
+  // fallback so the nav never flashes empty; when the fetch lands we
+  // replace the middle slot with the admin's categories (saree-flagged
+  // only). The shell entries (Home / New Arrivals / Shop All / Occasions
+  // / Sale) stay fixed regardless so brand navigation never disappears.
+  const { categories: liveCategories } = useLiveCategories();
+  const { priceRanges: livePriceRanges } = useLivePriceRanges();
+  const { occasions: liveOccasions } = useLiveOccasions();
+  // Search panel's "Recommended For You" rail is now the admin-tagged
+  // bestsellers (Product.badges includes 'bestseller'). Falls back to the
+  // first few static sarees so the grid is never blank on a fresh DB or
+  // while the fetch is in flight.
+  const { sarees: liveSarees } = useLiveSarees();
+  const bestSellers = liveSarees.filter((s) => s.badges.includes('bestseller')).slice(0, 4);
+  const recommended = bestSellers.length ? bestSellers : SAREES.slice(0, 4);
+  // Search panel "Popular Choices" — wired to the admin's saree-flagged
+  // categories (same list that drives the mega-menu). Falls back to the
+  // shipped static picks so the rail is never blank on a fresh DB or
+  // while the categories fetch is in flight.
+  const popularChoices = liveCategories.length
+    ? liveCategories.slice(0, 6).map((c) => ({
+        label: c.name,
+        href: `/shop?cat=${encodeURIComponent(c._id)}`,
+      }))
+    : POPULAR_CHOICES;
+  // Mega-menu + mobile drawer "Shop by Weave" tiles. Swaps the static
+  // tile list for the admin categories when available, falls back to
+  // the ShopAllMegaMenu's shipped defaults otherwise. Same treatment
+  // for the "Shop by Price" group from the PriceRanges collection.
+  const shopAllGroups = buildShopAllGroups(liveCategories, livePriceRanges, liveOccasions);
+  // Occasions mega-menu + drawer — sidebar parents come from the admin's
+  // top-level occasions; sub-occasion tiles stay from the shipped GROUPS
+  // (matched case-insensitively by id/label) until sub-occasions are wired.
+  const occasionsGroups = buildOccasionsGroups(liveOccasions);
+  // Middle category strip — live admin categories when present, otherwise
+  // the static fallback's middle slice (everything between the HEAD shell
+  // and the TAIL shell). Capped at 5 visible links; the rest fold into a
+  // "More" dropdown so the row stops wrapping once the catalogue grows.
+  const CATEGORY_CAP = 5;
+  const middleCategories: WeaveLink[] = liveCategories.length
+    ? liveCategories.map((c) => ({
+        href: `/shop?cat=${encodeURIComponent(c._id)}`,
+        label: c.name,
+        live: true,
+      }))
+    : WEAVE_LINKS_FALLBACK.slice(
+        WEAVE_LINKS_SHELL_HEAD.length,
+        WEAVE_LINKS_FALLBACK.length - WEAVE_LINKS_SHELL_TAIL.length,
+      );
+  const visibleCategories = middleCategories.slice(0, CATEGORY_CAP);
+  const overflowCategories = middleCategories.slice(CATEGORY_CAP);
+  const weaveLinks: WeaveLink[] = [
+    ...WEAVE_LINKS_SHELL_HEAD,
+    ...visibleCategories,
+    ...(overflowCategories.length ? [{ href: '#more', label: 'More' }] : []),
+    ...WEAVE_LINKS_SHELL_TAIL,
+  ];
+  // Mobile drawer uses the uncapped list — vertical space is cheap there
+  // and a "More" dropdown inside a slide-in drawer would be awkward.
+  const drawerWeaveLinks: WeaveLink[] = [
+    ...WEAVE_LINKS_SHELL_HEAD,
+    ...middleCategories,
+    ...WEAVE_LINKS_SHELL_TAIL,
+  ];
+
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Mobile drawer accordion state. Tracks which top-level ('shop-all' /
@@ -217,9 +300,29 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
   // hovering a second trigger swaps the panel instantly. Close is
   // delayed by 180ms so the cursor has time to travel from trigger to
   // panel without the menu collapsing in between.
-  type MegaId = 'shop' | 'occasions';
+  type MegaId = 'shop' | 'occasions' | 'more';
   const [openMenuId, setOpenMenuId] = useState<MegaId | null>(null);
   const megaCloseTimer = useRef<number | null>(null);
+  // "More" dropdown lives outside the nav row's overflow-x-auto wrapper so
+  // the panel doesn't get vertically clipped. Positioned with fixed coords
+  // taken from the trigger's bounding rect on open.
+  const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [moreMenuPos, setMoreMenuPos] = useState<{ left: number; top: number } | null>(null);
+  useEffect(() => {
+    if (openMenuId !== 'more' || !moreTriggerRef.current) return;
+    const place = () => {
+      const r = moreTriggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setMoreMenuPos({ left: r.left + r.width / 2, top: r.bottom });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [openMenuId]);
   const openMega = (id: MegaId) => {
     if (megaCloseTimer.current) {
       window.clearTimeout(megaCloseTimer.current);
@@ -506,12 +609,14 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
             1280px on, so desktop views are unchanged. */}
         <div className="max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-4 xl:px-10 py-2.5 xl:py-3 flex items-center justify-center gap-2 xl:gap-7 overflow-x-auto no-scrollbar">
           {weaveLinks.map((w) => {
-            const active = isLinkActive(w.href, pathname, searchParams);
+            const isMore = w.label === 'More' && w.href === '#more';
+            const active = !isMore && isLinkActive(w.href, pathname, searchParams);
             const isShopAll = w.label === 'Shop All';
             const isOccasions = w.label === 'Occasions';
             const triggered =
               (isShopAll && openMenuId === 'shop') ||
-              (isOccasions && openMenuId === 'occasions');
+              (isOccasions && openMenuId === 'occasions') ||
+              (isMore && openMenuId === 'more');
             const cls =
               w.accent === 'box'
                 ? clsx(
@@ -532,7 +637,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
               cls,
             );
             const labelContent =
-              isShopAll || isOccasions ? (
+              isShopAll || isOccasions || isMore ? (
                 <span className="inline-flex items-center gap-1">
                   {w.label}
                   <LuChevronDown
@@ -548,7 +653,20 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
               ) : (
                 w.label
               );
-            const link = resolvedHref ? (
+            const link = isMore ? (
+              <button
+                ref={moreTriggerRef}
+                type="button"
+                onClick={() =>
+                  openMenuId === 'more' ? setOpenMenuId(null) : openMega('more')
+                }
+                aria-haspopup="menu"
+                aria-expanded={openMenuId === 'more'}
+                className={linkCls}
+              >
+                {labelContent}
+              </button>
+            ) : resolvedHref ? (
               <Link
                 href={resolvedHref}
                 aria-current={active ? 'page' : undefined}
@@ -573,6 +691,18 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
                 <div
                   key={w.href + w.label}
                   onMouseEnter={() => openMega(id)}
+                  onMouseLeave={closeMega}
+                  className="flex items-center"
+                >
+                  {link}
+                </div>
+              );
+            }
+            if (isMore) {
+              return (
+                <div
+                  key={w.href + w.label}
+                  onMouseEnter={() => openMega('more')}
                   onMouseLeave={closeMega}
                   className="flex items-center"
                 >
@@ -606,6 +736,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
         <ShopAllMegaMenu
           open={openMenuId === 'shop'}
           onClose={() => setOpenMenuId(null)}
+          groups={shopAllGroups}
         />
       </div>
       <div
@@ -616,8 +747,56 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
         <OccasionsMegaMenu
           open={openMenuId === 'occasions'}
           onClose={() => setOpenMenuId(null)}
+          groups={occasionsGroups}
         />
       </div>
+
+      {/* "More" dropdown — rendered outside the nav row's overflow-x-auto
+          wrapper so the panel isn't clipped. Position is taken from the
+          trigger's bounding rect and uses position: fixed, which escapes
+          every ancestor's overflow. Shared hover handlers with the
+          trigger via openMega('more') / closeMega. */}
+      {overflowCategories.length > 0 && moreMenuPos && (
+        <div
+          role="menu"
+          aria-label="More categories"
+          onMouseEnter={() => openMega('more')}
+          onMouseLeave={closeMega}
+          className={clsx(
+            'hidden lg:block fixed min-w-[200px] bg-ivory border border-ink/10 shadow-lg py-1 z-40 -translate-x-1/2 mt-2',
+            'transition-opacity duration-150',
+            openMenuId === 'more'
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none',
+          )}
+          style={{ left: moreMenuPos.left, top: moreMenuPos.top }}
+        >
+          {overflowCategories.map((item) => {
+            const itemHref = navHref(item.href);
+            const itemCls =
+              'block px-4 py-2 text-[0.72rem] tracking-[0.08em] uppercase font-bold text-ink hover:bg-ink/5 hover:text-scarlet whitespace-nowrap';
+            return itemHref ? (
+              <Link
+                key={item.href + item.label}
+                href={itemHref}
+                role="menuitem"
+                onClick={() => setOpenMenuId(null)}
+                className={itemCls}
+              >
+                {item.label}
+              </Link>
+            ) : (
+              <span
+                key={item.href + item.label}
+                role="menuitem"
+                className={clsx(itemCls, 'cursor-default')}
+              >
+                {item.label}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Search panel — slides in from the right when the search icon is
           clicked. Mirrors the Nalli / Pothys pattern: a search bar at the
@@ -678,7 +857,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
                   Popular Choices
                 </h3>
                 <ul className="flex flex-wrap md:flex-col gap-2">
-                  {POPULAR_CHOICES.map((c) => {
+                  {popularChoices.map((c) => {
                     const chipCls =
                       'inline-block w-full border border-ink/20 px-4 py-2 text-sm text-ink hover:border-maroon hover:text-maroon transition-colors text-center md:text-left';
                     const resolved = navHref(c.href);
@@ -714,7 +893,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
                   Recommended For You
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto overscroll-contain pr-2 search-rail-scroll flex-1 min-h-0">
-                  {RECOMMENDED.map((s) => {
+                  {recommended.map((s) => {
                     const resolved = navHref(`/shop/${s.id}`);
                     const tile = (
                       <>
@@ -836,7 +1015,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
               Browse
             </div>
             <nav className="flex flex-col mb-7">
-              {weaveLinks.map((w) => {
+              {drawerWeaveLinks.map((w) => {
                 // Shop All + Occasions open accordions instead of
                 // navigating, so the desktop mega-menu's sub-tree is
                 // reachable on mobile without an extra stop on /shop.
@@ -846,7 +1025,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
                       key="drawer-shop-all"
                       id="shop-all"
                       label={w.label}
-                      groups={SHOP_ALL_GROUPS}
+                      groups={shopAllGroups}
                       expanded={drawerExpanded}
                       onToggle={toggleDrawerExpand}
                       onNavigate={() => setMenuOpen(false)}
@@ -859,7 +1038,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
                       key="drawer-occasions"
                       id="occasions"
                       label={w.label}
-                      groups={OCCASIONS_GROUPS}
+                      groups={occasionsGroups}
                       expanded={drawerExpanded}
                       onToggle={toggleDrawerExpand}
                       onNavigate={() => setMenuOpen(false)}

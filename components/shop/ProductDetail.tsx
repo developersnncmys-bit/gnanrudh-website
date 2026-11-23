@@ -2,17 +2,16 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { SAREES, BADGE_LABEL, getColorways } from '@/lib/sarees';
+import { BADGE_LABEL, type Saree } from '@/lib/sarees';
 import { getColorwayGallery } from '@/lib/product-images';
 import { useRecentlyViewed } from '@/lib/recently-viewed';
+import { useLiveSarees } from '@/lib/catalog';
 import ProductGallery from './ProductGallery';
 import ProductInfo from './ProductInfo';
 import ProductAccordion from './ProductAccordion';
 import ProductRail from './ProductRail';
 import ProductReviews from './ProductReviews';
 import StickyBuyBar from './StickyBuyBar';
-
-type Saree = (typeof SAREES)[number];
 
 export default function ProductDetail({ saree }: { saree: Saree }) {
   const { mrp, badges } = saree;
@@ -27,9 +26,13 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
   // Recently-viewed: push current id, read the rest from storage.
   const recentIds = useRecentlyViewed(saree.id);
 
-  // Similar = same weave OR same tier, excluding the current piece.
-  const similarIds = SAREES
-    .filter((s) => s.id !== saree.id && (s.weave === saree.weave || s.tier === saree.tier))
+  // Similar = same category (weave) as the current piece, excluding itself.
+  // Pulled from the live catalogue so new admin products show up here
+  // without a rebuild. Empty until the fetch resolves — the rail hides
+  // itself then.
+  const { sarees: liveSarees } = useLiveSarees();
+  const similarIds = liveSarees
+    .filter((s) => s.id !== saree.id && s.weave === saree.weave)
     .slice(0, 8)
     .map((s) => s.id);
 
@@ -41,9 +44,11 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
 
   // Color state is owned HERE (not in ProductInfo) so the gallery on the
   // left can react to colour changes — picking a swatch swaps the
-  // thumbnails to images of sarees in that colour.
-  const colorways = getColorways(saree);
-  const [colorId, setColorId] = useState(colorways[0]?.id ?? '');
+  // thumbnails to images of sarees in that colour. Starts empty so the
+  // first paint shows the product's main gallery (product-level images);
+  // the gallery only switches to a variant's own photos after the shopper
+  // clicks a swatch.
+  const [colorId, setColorId] = useState('');
   const galleryImages = getColorwayGallery(saree, colorId);
 
   return (
@@ -74,6 +79,7 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
           <ProductGallery
             key={colorId}
             images={galleryImages}
+            videoUrl={saree.videoUrl}
             alt={saree.name}
           />
           <ProductInfo

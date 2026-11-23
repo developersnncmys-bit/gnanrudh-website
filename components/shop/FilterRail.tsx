@@ -2,12 +2,8 @@
 
 import { TIERS, STANDARD_COLORWAYS } from '@/lib/sarees';
 import type { Tier, Weave } from '@/lib/sarees';
+import { useLiveCategories } from '@/lib/catalog';
 import { ColorList } from './FilterRailPrimitives';
-
-const WEAVES: Weave[] = [
-  'Kanjivaram', 'Banarasi', 'Mysore Silk', 'Mangalagiri',
-  'Pochampally', 'Gadwal', 'Patola', 'Fancy Sarees', 'Mixed Pattu Sarees',
-];
 
 const PRICE_BRACKETS: { id: string; label: string; min: number; max: number }[] = [
   { id: 'under-5k', label: 'Under ₹5,000', min: 0, max: 5000 },
@@ -20,13 +16,18 @@ const PRICE_BRACKETS: { id: string; label: string; min: number; max: number }[] 
 export type FilterState = {
   tiers: Tier[];
   weaves: Weave[];
+  // Admin-managed categories (backend `Category._id`). Populated by the
+  // "Shop by Category" filter section; the navbar's `?cat=<id>` deep
+  // links feed this too. Lives alongside `weaves` so hard-coded weave
+  // deep-link URLs stay intact.
+  categories: string[];
   bracket: string | null;
   sale: boolean;
   colors: string[]; // STANDARD_COLORWAYS ids
 };
 
 export const EMPTY_FILTERS: FilterState = {
-  tiers: [], weaves: [], bracket: null, sale: false, colors: [],
+  tiers: [], weaves: [], categories: [], bracket: null, sale: false, colors: [],
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -87,15 +88,20 @@ export default function FilterRail({
   filters: FilterState;
   counts: {
     tier: Record<Tier, number>;
-    weave: Record<string, number>;
+    category: Record<string, number>;
     color: Record<string, number>;
     sale: number;
   };
   onChange: (next: FilterState) => void;
   onClear: () => void;
 }) {
+  // Backend categories feed the "Shop by Category" section. Falls back
+  // to an empty list when the fetch is in flight — the section just
+  // renders nothing below its header until the response lands.
+  const { categories: liveCategories } = useLiveCategories();
+
   const activeCount =
-    filters.tiers.length + filters.weaves.length +
+    filters.tiers.length + filters.weaves.length + filters.categories.length +
     (filters.bracket ? 1 : 0) + (filters.sale ? 1 : 0) +
     filters.colors.length;
 
@@ -103,9 +109,11 @@ export default function FilterRail({
     ...filters,
     tiers: filters.tiers.includes(t) ? filters.tiers.filter((x) => x !== t) : [...filters.tiers, t],
   });
-  const toggleWeave = (w: Weave) => onChange({
+  const toggleCategory = (id: string) => onChange({
     ...filters,
-    weaves: filters.weaves.includes(w) ? filters.weaves.filter((x) => x !== w) : [...filters.weaves, w],
+    categories: filters.categories.includes(id)
+      ? filters.categories.filter((x) => x !== id)
+      : [...filters.categories, id],
   });
   const selectBracket = (id: string) => onChange({
     ...filters, bracket: filters.bracket === id ? null : id,
@@ -132,7 +140,7 @@ export default function FilterRail({
         )}
       </div>
 
-      <Section title="Category">
+      <Section title="Occasions">
         {(Object.keys(TIERS) as Tier[]).map((id) => {
           const t = TIERS[id];
           return (
@@ -147,14 +155,14 @@ export default function FilterRail({
         })}
       </Section>
 
-      <Section title="Weave">
-        {WEAVES.map((w) => (
+      <Section title="Shop by Category">
+        {liveCategories.map((c) => (
           <Check
-            key={w}
-            label={w}
-            checked={filters.weaves.includes(w)}
-            onChange={() => toggleWeave(w)}
-            count={counts.weave[w] ?? 0}
+            key={c._id}
+            label={c.name}
+            checked={filters.categories.includes(c._id)}
+            onChange={() => toggleCategory(c._id)}
+            count={counts.category[c._id] ?? 0}
           />
         ))}
       </Section>

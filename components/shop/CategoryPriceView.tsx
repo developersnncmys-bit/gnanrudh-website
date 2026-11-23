@@ -8,7 +8,8 @@ import {
   BADGE_LABEL,
   sareeMatchesColor,
 } from '@/lib/sarees';
-import type { Weave, BadgeKind } from '@/lib/sarees';
+import type { BadgeKind } from '@/lib/sarees';
+import { useLiveCategories, useLiveSarees } from '@/lib/catalog';
 import ProductCard from './ProductCard';
 import CategoryPriceIntro from './CategoryPriceIntro';
 import CategoryTrustBand from './CategoryTrustBand';
@@ -23,12 +24,7 @@ import { Section, Check, ColorList } from './FilterRailPrimitives';
  * is the Price filter section being dropped (the page IS the price).
  */
 
-const WEAVES: Weave[] = [
-  'Kanjivaram', 'Banarasi', 'Mysore Silk', 'Mangalagiri',
-  'Pochampally', 'Gadwal', 'Patola', 'Fancy Sarees', 'Mixed Pattu Sarees',
-];
-
-const AVAILABILITY_BADGES: BadgeKind[] = ['ready', 'fast', 'last'];
+const AVAILABILITY_BADGES: BadgeKind[] = ['ready', 'fast'];
 
 const DISCOUNT_BANDS: { id: string; label: string; min: number; max: number }[] = [
   { id: '10-20',  label: '10 – 20%',   min: 10,  max: 20 },
@@ -63,11 +59,14 @@ export default function CategoryPriceView({
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Backend-managed categories feed the "Shop by Category" filter rail.
+  const { categories: liveCategories } = useLiveCategories();
+
   // URL filters (price is locked by prop, not read from URL).
-  const weaves = useMemo<Weave[]>(() => {
-    const csv = searchParams.get('weave');
+  const categories = useMemo<string[]>(() => {
+    const csv = searchParams.get('cat');
     if (!csv) return [];
-    return csv.split(',').filter((w) => (WEAVES as string[]).includes(w)) as Weave[];
+    return csv.split(',').map((s) => s.trim()).filter(Boolean);
   }, [searchParams]);
   const colors = useMemo<string[]>(() => {
     const csv = searchParams.get('color');
@@ -93,7 +92,7 @@ export default function CategoryPriceView({
 
   const updateUrl = (
     next: {
-      weaves?: Weave[];
+      categories?: string[];
       colors?: string[];
       order?: Sort;
       discounts?: string[];
@@ -103,12 +102,12 @@ export default function CategoryPriceView({
     const params = new URLSearchParams();
     if (pmin !== null) params.set('minPrice', String(pmin));
     if (pmax !== null && pmax !== Infinity) params.set('maxPrice', String(pmax));
-    const w = next.weaves ?? weaves;
+    const cats = next.categories ?? categories;
     const c = next.colors ?? colors;
     const o = next.order ?? sort;
     const dd = next.discounts ?? discounts;
     const av = next.availability ?? availability;
-    if (w.length) params.set('weave', w.join(','));
+    if (cats.length) params.set('cat', cats.join(','));
     if (c.length) params.set('color', c.join(','));
     if (dd.length) params.set('discount', dd.join(','));
     if (av.length) params.set('avail', av.join(','));
@@ -116,8 +115,8 @@ export default function CategoryPriceView({
     router.replace(`/shop?${params.toString()}`, { scroll: false });
   };
 
-  const toggleWeave = (w: Weave) =>
-    updateUrl({ weaves: weaves.includes(w) ? weaves.filter((x) => x !== w) : [...weaves, w] });
+  const toggleCategory = (id: string) =>
+    updateUrl({ categories: categories.includes(id) ? categories.filter((x) => x !== id) : [...categories, id] });
   const toggleColor = (id: string) =>
     updateUrl({ colors: colors.includes(id) ? colors.filter((x) => x !== id) : [...colors, id] });
   const toggleDiscount = (id: string) =>
@@ -141,18 +140,19 @@ export default function CategoryPriceView({
 
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Base dataset — sarees inside the locked price band, newest first.
+  // Live catalogue only — sarees inside the locked price band, newest first.
+  const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
   const base = useMemo(() => {
     const lo = pmin ?? 0;
     const hi = pmax ?? Infinity;
-    return [...SAREES]
+    return [...liveSarees]
       .filter((s) => s.price >= lo && (hi === Infinity ? true : s.price < hi))
       .reverse();
-  }, [pmin, pmax]);
+  }, [liveSarees, pmin, pmax]);
 
   const items = useMemo(() => {
     let list = base;
-    if (weaves.length) list = list.filter((s) => weaves.includes(s.weave));
+    if (categories.length) list = list.filter((s) => categories.includes(s.region));
     if (colors.length) {
       list = list.filter((s) => colors.some((cid) => sareeMatchesColor(s, cid)));
     }
@@ -171,11 +171,11 @@ export default function CategoryPriceView({
     if (sort === 'price-asc') list = [...list].sort((a, b) => a.price - b.price);
     else if (sort === 'price-desc') list = [...list].sort((a, b) => b.price - a.price);
     return list;
-  }, [base, weaves, colors, discounts, availability, sort]);
+  }, [base, categories, colors, discounts, availability, sort]);
 
-  const weaveCounts = useMemo(() => {
+  const categoryCounts = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const s of base) map[s.weave] = (map[s.weave] ?? 0) + 1;
+    for (const s of base) if (s.region) map[s.region] = (map[s.region] ?? 0) + 1;
     return map;
   }, [base]);
   const colorCounts = useMemo(() => {
@@ -207,7 +207,7 @@ export default function CategoryPriceView({
   }, [base]);
 
   const activeCount =
-    weaves.length + colors.length + discounts.length + availability.length;
+    categories.length + colors.length + discounts.length + availability.length;
 
   return (
     <div className="bg-white min-h-screen text-gray-900">
@@ -235,7 +235,20 @@ export default function CategoryPriceView({
             onSortChange={(v) => updateUrl({ order: v as Sort })}
           />
 
-          {items.length === 0 ? (
+          {(sareesLoading || base.length === 0) ? (
+            <div
+              className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8 pt-8"
+              aria-busy="true"
+            >
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={`price-skel-${i}`} aria-hidden>
+                  <div className="relative overflow-hidden bg-ink/5 aspect-[4/5] rounded-sm animate-pulse" />
+                  <div className="h-4 mt-3 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                  <div className="h-4 mt-2 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : items.length === 0 ? (
             <div className="py-16 text-center text-sm text-gray-600">
               No sarees match these filters in this price band.{' '}
               <button
@@ -273,14 +286,14 @@ export default function CategoryPriceView({
         activeCount={activeCount}
         onClearAll={clearAll}
       >
-        <Section title="Weave">
-          {WEAVES.map((w) => (
+        <Section title="Shop by Category">
+          {liveCategories.map((c) => (
             <Check
-              key={w}
-              label={w}
-              checked={weaves.includes(w)}
-              onChange={() => toggleWeave(w)}
-              count={weaveCounts[w] ?? 0}
+              key={c._id}
+              label={c.name}
+              checked={categories.includes(c._id)}
+              onChange={() => toggleCategory(c._id)}
+              count={categoryCounts[c._id] ?? 0}
             />
           ))}
         </Section>

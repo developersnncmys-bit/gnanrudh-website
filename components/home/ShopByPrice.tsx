@@ -1,52 +1,48 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES } from '@/lib/sarees';
+import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 import { navHref } from '@/lib/soft-launch';
 import SectionHeader from '@/components/home/SectionHeader';
+import { priceRangesApi, type ServerPriceRange } from '@/lib/api';
 
 type Bucket = {
   label: string;
   sub: string;
   tagline: string;
   href: string;
-  sampleId: string;
+  // Admin-uploaded tile image. When absent, the card renders a clean
+  // empty-frame placeholder — no sample-saree fallback.
   image?: string;
 };
 
-// Four price-band tiles. Each card is a dark wooden frame around a
-// model photograph with a small cream ornament + italic tagline
-// overlaid at the bottom.
-const buckets: Bucket[] = [
-  {
-    label: 'Everyday Drapes',
-    sub: 'Under ₹5,000',
-    tagline: 'Beauty That Feels as Good as It Looks.',
-    href: '/shop?maxPrice=5000',
-    sampleId: 'mangalagiri-tulsi',
-  },
-  {
-    label: 'Light Festive',
-    sub: 'Under ₹10,000',
-    tagline: 'Experience the Royal Feel of Silk.',
-    href: '/shop?maxPrice=10000',
-    sampleId: 'banarasi-saanjh',
-  },
-  {
-    label: 'Festive Picks',
-    sub: 'Under ₹25,000',
-    tagline: 'Where Heritage Meets Elegance.',
-    href: '/shop?maxPrice=25000',
-    sampleId: 'fancy-haldi',
-    image: '/images/c5.webp',
-  },
-  {
-    label: 'Bridal · Heirloom',
-    sub: '₹25,000 & Above',
-    tagline: 'Beautiful Weaves, Beautiful Heirlooms.',
-    href: '/shop?minPrice=25000',
-    sampleId: 'banarasi-raktarani',
-  },
-];
+const inr = (n: number) =>
+  `₹${new Intl.NumberFormat('en-IN').format(Math.round(n))}`;
+
+const bandLabel = (min: number, max: number | null) => {
+  if (max == null) return `${inr(min)} & Above`;
+  if (!min) return `Under ${inr(max)}`;
+  return `${inr(min)} – ${inr(max)}`;
+};
+
+const bandHref = (min: number, max: number | null) => {
+  if (max == null) return `/shop?minPrice=${Math.round(min)}`;
+  if (!min) return `/shop?maxPrice=${Math.round(max)}`;
+  return `/shop?minPrice=${Math.round(min)}&maxPrice=${Math.round(max)}`;
+};
+
+function mapRange(r: ServerPriceRange): Bucket {
+  const title = (r.title || '').trim() || r.label;
+  return {
+    label: title,
+    sub: r.label || bandLabel(r.min, r.max),
+    tagline: (r.description || '').trim(),
+    href: bandHref(r.min || 0, r.max ?? null),
+    image: r.image && r.image.trim() ? r.image : undefined,
+  };
+}
 
 // Small cream decorative mark that sits at the bottom of each card,
 // just above the tagline — a quiet bloom glyph so the frame reads as
@@ -66,6 +62,55 @@ function ArchOrnament() {
 }
 
 export default function ShopByPrice() {
+  const [buckets, setBuckets] = useState<Bucket[]>([]);
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    priceRangesApi.list()
+      .then((res) => {
+        if (!alive) return;
+        const rows = res.items || [];
+        setBuckets(rows.map(mapRange));
+      })
+      .catch(() => { /* leave empty — no static fallback */ });
+    return () => { alive = false; };
+  }, []);
+
+  const updateButtons = useCallback(() => {
+    const el = railRef.current;
+    if (!el) return;
+    setCanPrev(el.scrollLeft > 4);
+    setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    updateButtons();
+    const el = railRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateButtons, { passive: true });
+    window.addEventListener('resize', updateButtons);
+    return () => {
+      el.removeEventListener('scroll', updateButtons);
+      window.removeEventListener('resize', updateButtons);
+    };
+  }, [updateButtons, buckets.length]);
+
+  // Advance exactly one card per click — measure the first card's actual
+  // width and add the flex gap (20 / 24 px at the two breakpoints) so the
+  // next tile snaps to the leading edge instead of overshooting.
+  const scrollByCard = (dir: 1 | -1) => {
+    const el = railRef.current;
+    if (!el) return;
+    const first = el.firstElementChild as HTMLElement | null;
+    if (!first) return;
+    const gap = parseFloat(window.getComputedStyle(el).columnGap || '0') || 20;
+    const step = first.getBoundingClientRect().width + gap;
+    el.scrollBy({ left: dir * step, behavior: 'smooth' });
+  };
+
   return (
     <section className="bg-white py-10 md:py-14">
       <div className="max-w-[1720px] mx-auto px-6 lg:px-10">
@@ -76,19 +121,51 @@ export default function ShopByPrice() {
           showDividers={false}
         />
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 md:gap-6 pt-2">
+        {/* Arrow controls — only meaningful once there are more than four
+            buckets to slide through. Hidden on mobile where native swipe
+            handles navigation. */}
+        {buckets.length > 4 && (
+          <div className="hidden md:flex items-center gap-2 justify-end mb-4">
+            <button
+              onClick={() => scrollByCard(-1)}
+              disabled={!canPrev}
+              aria-label="Previous price range"
+              className="w-10 h-10 rounded-full border border-ink/20 flex items-center justify-center text-ink hover:bg-maroon hover:text-ivory hover:border-maroon disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <LuChevronLeft size={18} strokeWidth={2} aria-hidden />
+            </button>
+            <button
+              onClick={() => scrollByCard(1)}
+              disabled={!canNext}
+              aria-label="Next price range"
+              className="w-10 h-10 rounded-full border border-ink/20 flex items-center justify-center text-ink hover:bg-maroon hover:text-ivory hover:border-maroon disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <LuChevronRight size={18} strokeWidth={2} aria-hidden />
+            </button>
+          </div>
+        )}
+
+        <div
+          ref={railRef}
+          className="flex gap-5 md:gap-6 overflow-x-auto no-scrollbar snap-x snap-mandatory pt-2 pb-2"
+        >
           {buckets.map((b) => {
-            const sample = SAREES.find((s) => s.id === b.sampleId);
             const bucketHref = navHref(b.href);
             const BucketTag = bucketHref ? Link : 'span';
+            // Fixed basis so the flex rail shows exactly 2 cards on mobile
+            // and 4 on md+, matching the gap values on the rail (20 / 24 px).
+            const cardSizing =
+              'shrink-0 basis-[calc(50%-10px)] md:basis-[calc(25%-18px)] snap-start';
             const bucketProps = bucketHref
               ? {
                   href: bucketHref,
-                  className: 'group block text-center',
+                  className: `group block text-center ${cardSizing}`,
                 }
               : {
-                  className: 'group block text-center cursor-default',
+                  className: `group block text-center cursor-default ${cardSizing}`,
                 };
+            // Admin-uploaded tile only — no sample-saree fallback.
+            const imageSrc = b.image;
             return (
               <BucketTag
                 key={b.label}
@@ -109,10 +186,10 @@ export default function ShopByPrice() {
                   {/* Inner photo — a hairline of dark wood stays visible
                       around the saree as the "matting". */}
                   <div className="relative w-full h-full overflow-hidden bg-bone rounded-sm">
-                    {(b.image || sample) && (
+                    {imageSrc && (
                       <Image
-                        src={b.image ?? sample!.image}
-                        alt={sample?.name ?? b.label}
+                        src={imageSrc}
+                        alt={b.label}
                         fill
                         sizes="(max-width: 768px) 46vw, 22vw"
                         className="object-cover transition-transform duration-500 group-hover:scale-105"
@@ -125,13 +202,16 @@ export default function ShopByPrice() {
                     <div className="absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/10 to-transparent pointer-events-none" />
 
                     {/* Ornament + italic tagline — cream, centered at the
-                        bottom of the card. */}
-                    <div className="absolute inset-x-0 bottom-5 md:bottom-7 px-4 flex flex-col items-center gap-2">
-                      <ArchOrnament />
-                      <p className="font-display italic text-[0.78rem] md:text-sm text-ivory leading-snug max-w-[80%]">
-                        {b.tagline}
-                      </p>
-                    </div>
+                        bottom of the card. Only rendered when the admin
+                        has written a tagline for this bucket. */}
+                    {b.tagline && (
+                      <div className="absolute inset-x-0 bottom-5 md:bottom-7 px-4 flex flex-col items-center gap-2">
+                        <ArchOrnament />
+                        <p className="font-display italic text-[0.78rem] md:text-sm text-ivory leading-snug max-w-[80%]">
+                          {b.tagline}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

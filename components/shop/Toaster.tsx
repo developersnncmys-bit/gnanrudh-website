@@ -5,16 +5,16 @@ import Image from 'next/image';
 import { LuHeart, LuShoppingBag, LuX, LuCheck } from 'react-icons/lu';
 import { useShop } from '@/lib/shop-store';
 import { useCartDrawer } from '@/lib/cart-drawer';
-import { SAREES, formatINR } from '@/lib/sarees';
+import { formatINR } from '@/lib/sarees';
 
 export default function Toaster() {
-  const { toasts, dismissToast } = useShop();
+  const { toasts, dismissToast, findSaree } = useShop();
   const { openCart } = useCartDrawer();
 
   return (
     <div className="fixed bottom-5 right-5 z-[80] flex flex-col gap-3 w-[320px] max-w-[calc(100vw-2.5rem)] pointer-events-none">
       {toasts.map((t) => {
-        const product = SAREES.find((s) => s.id === t.productId);
+        const product = findSaree(t.productId);
         const isAdd = t.kind === 'cart-add' || t.kind === 'wishlist-add';
         const isCart = t.kind === 'cart-add' || t.kind === 'cart-remove';
 

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import LegalShell, { type LegalSection } from '@/components/legal/LegalShell';
+import { fetchCmsPage } from '@/lib/cms';
+import { parseCmsBody, isStubBody } from '@/lib/cms-markdown';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy · House Of GnanRudh',
@@ -7,7 +9,20 @@ export const metadata: Metadata = {
     'How House Of GnanRudh collects, uses, stores and protects the personal information of customers shopping for heirloom sarees.',
 };
 
-const sections: LegalSection[] = [
+// CMS page name under /api/public/pages/<name> — admin seed uses this label.
+const CMS_NAME = 'Privacy policy';
+const FALLBACK_UPDATED = '12 November 2026';
+const FALLBACK_INTRO = (
+  <p>
+    At <strong className="text-ink">HOUSE OF GNANRUDH</strong>, we value
+    your privacy and are committed to protecting your personal
+    information. This Privacy Policy explains how we collect, use,
+    store, and protect your information when you visit our website or
+    purchase our products.
+  </p>
+);
+
+const FALLBACK_SECTIONS: LegalSection[] = [
   {
     id: 'information-we-collect',
     title: '1. Information We Collect',
@@ -203,21 +218,20 @@ const sections: LegalSection[] = [
   },
 ];
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  // Admin-authored body takes over once the stub ("TODO: supply...") is
+  // replaced. Until then the hand-written fallback above keeps rendering so
+  // visitors never land on a half-filled policy.
+  const page = await fetchCmsPage(CMS_NAME);
+  const useCms = page && !isStubBody(page.body);
+  const parsed = useCms ? parseCmsBody(page.body || '') : null;
+
   return (
     <LegalShell
       title="Privacy Policy"
-      lastUpdated="12 November 2026"
-      intro={
-        <p>
-          At <strong className="text-ink">HOUSE OF GNANRUDH</strong>, we value
-          your privacy and are committed to protecting your personal
-          information. This Privacy Policy explains how we collect, use,
-          store, and protect your information when you visit our website or
-          purchase our products.
-        </p>
-      }
-      sections={sections}
+      lastUpdated={page?.updated || FALLBACK_UPDATED}
+      intro={parsed?.intro ?? FALLBACK_INTRO}
+      sections={parsed?.sections?.length ? parsed.sections : FALLBACK_SECTIONS}
     />
   );
 }

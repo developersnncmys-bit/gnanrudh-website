@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import clsx from 'clsx';
+import type { ServerCategory, ServerPriceRange, ServerOccasion } from '@/lib/api';
 
 /**
  * ShopAllMegaMenu — Kalki-style mega menu that opens when the user
@@ -59,23 +60,86 @@ export const GROUPS: Group[] = [
   {
     id: 'collections',
     label: 'Collections',
+    // No hardcoded images — tiles render as skeletons until a real image
+    // source is wired (e.g. live products carrying the matching badge).
     tiles: [
-      { label: 'New Arrivals', href: '/shop?sort=new', image: '/newarrivals/neelambari kanjivaram.webp' },
-      { label: 'Best Sellers', href: '/shop?sort=bestseller', image: '/bestsellers/Mayura kanjee.webp' },
-      { label: 'On Sale', href: '/shop?sale=1', image: '/newarrivals/rangraj patola.webp' },
+      { label: 'New Arrivals', href: '/shop?sort=new' },
+      { label: 'Best Sellers', href: '/shop?sort=bestseller' },
+      { label: 'On Sale', href: '/shop?sale=1' },
     ],
   },
 ];
 
+// Merge live admin data into the static group set:
+// - `weaves` tiles become `/shop?cat=<id>` links from the Categories collection.
+// - `price` tiles become `/shop?minPrice=&maxPrice=` links from the PriceRanges
+//   collection, using the admin's uploaded tile image when present.
+// - `occasions` tiles become `/shop?tier=<id>` links from the top-level
+//   Occasions (parent=null) with the admin's tile image.
+// Any stream can be empty (fresh DB or fetch still in flight) — the static
+// tiles for that group are kept so the menu never flashes empty.
+export function buildShopAllGroups(
+  categories: ServerCategory[],
+  priceRanges: ServerPriceRange[] = [],
+  occasions: ServerOccasion[] = [],
+): Group[] {
+  const fallbackPriceImages = GROUPS.find((g) => g.id === 'price')!.tiles.map((t) => t.image);
+  // Occasions: no fallback image. Admin-uploaded `o.image` only — tiles
+  // without an upload render as a pulsing skeleton in the mega menu so
+  // it's clear those are waiting on content rather than borrowing a
+  // hardcoded photo.
+  const occasionTiles: Tile[] = occasions
+    .filter((o) => !o.parent)
+    .map((o) => ({
+      label: o.name,
+      href: `/shop?tier=${encodeURIComponent(String(o._id || o.name).toLowerCase())}`,
+      image: o.image && o.image.trim() ? o.image : undefined,
+    }));
+  const priceTiles: Tile[] = priceRanges.map((r, i) => {
+    const min = Math.round(r.min || 0);
+    const max = r.max == null ? null : Math.round(r.max);
+    const href =
+      max == null ? `/shop?minPrice=${min}`
+      : !min ? `/shop?maxPrice=${max}`
+      : `/shop?minPrice=${min}&maxPrice=${max}`;
+    return {
+      label: (r.label || r.title || '').trim() || `Band ${i + 1}`,
+      href,
+      image: (r.image && r.image.trim()) || fallbackPriceImages[i % fallbackPriceImages.length],
+    };
+  });
+  return GROUPS.map((g) => {
+    if (g.id === 'weaves' && categories.length) {
+      return {
+        ...g,
+        tiles: categories.map((c) => ({
+          label: c.name,
+          href: `/shop?cat=${encodeURIComponent(c._id)}`,
+          image: c.image || undefined,
+        })),
+      };
+    }
+    if (g.id === 'price' && priceTiles.length) {
+      return { ...g, tiles: priceTiles };
+    }
+    if (g.id === 'occasions' && occasionTiles.length) {
+      return { ...g, tiles: occasionTiles };
+    }
+    return g;
+  });
+}
+
 export default function ShopAllMegaMenu({
   open,
   onClose,
+  groups = GROUPS,
 }: {
   open: boolean;
   onClose: () => void;
+  groups?: Group[];
 }) {
-  const [activeId, setActiveId] = useState(GROUPS[0].id);
-  const active = GROUPS.find((g) => g.id === activeId) ?? GROUPS[0];
+  const [activeId, setActiveId] = useState(groups[0].id);
+  const active = groups.find((g) => g.id === activeId) ?? groups[0];
 
   return (
     <div
@@ -94,7 +158,7 @@ export default function ShopAllMegaMenu({
             scrolls underneath. */}
         <aside className="w-72 shrink-0 bg-bone -my-6 -ml-6 lg:-ml-10 py-8 pl-11 lg:pl-[60px] pr-5">
           <nav className="flex flex-col">
-            {GROUPS.map((g) => {
+            {groups.map((g) => {
               const isActive = g.id === activeId;
               return (
                 <button
@@ -134,7 +198,20 @@ export default function ShopAllMegaMenu({
               onClick={onClose}
               className="group"
             >
-              <div className="relative aspect-square overflow-hidden bg-ivory img-fallback">
+              <div
+                className={clsx(
+                  'relative aspect-square overflow-hidden img-fallback',
+                  // Occasions + Collections groups: no fallback image.
+                  // Tiles without a real photo render as a pulsing skeleton
+                  // so empty state reads as "waiting on content" rather
+                  // than a blank tile.
+                  t.image
+                    ? 'bg-ivory'
+                    : active.id === 'occasions' || active.id === 'collections'
+                      ? 'bg-ink/5 animate-pulse'
+                      : 'bg-ivory',
+                )}
+              >
                 {t.image && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

@@ -9,6 +9,8 @@ import {
   formatPublishDate,
   type BlogPost,
 } from '@/lib/blog';
+import { API_URL, type ServerArticle } from '@/lib/api';
+import { mapArticleToPost } from '@/lib/transforms';
 import { navHref } from '@/lib/soft-launch';
 
 export const metadata: Metadata = {
@@ -20,18 +22,31 @@ export const metadata: Metadata = {
 const GOLD_GRADIENT =
   'linear-gradient(135deg, #8A5A1F 0%, #C8923F 20%, #F2C99E 45%, #FFF2D6 50%, #F2C99E 55%, #C8923F 80%, #8A5A1F 100%)';
 
-export default function BlogPage() {
+async function loadPosts(): Promise<BlogPost[]> {
+  // Live articles override the static set when the admin has published
+  // anything; otherwise the static BLOG_POSTS hand-written set still shows.
+  try {
+    const res = await fetch(`${API_URL}/api/public/journal?limit=50`, { next: { revalidate: 60 } });
+    if (res.ok) {
+      const data: { items: ServerArticle[] } = await res.json();
+      if (data.items?.length) return data.items.map(mapArticleToPost);
+    }
+  } catch {}
+  return BLOG_POSTS;
+}
+
+export default async function BlogPage() {
+  const posts = await loadPosts();
   // Carousel takes the first featured post + the next two most recent so
   // the hero always rotates through a fresh trio of stories.
-  const featured = BLOG_POSTS.find((p) => p.featured) ?? BLOG_POSTS[0];
-  const heroSlides = [
-    featured,
-    ...BLOG_POSTS.filter((p) => p.slug !== featured.slug).slice(0, 2),
-  ];
-  const rest = BLOG_POSTS.filter((p) => p.slug !== featured.slug);
+  const featured = posts.find((p) => p.featured) ?? posts[0];
+  const heroSlides = featured
+    ? [featured, ...posts.filter((p) => p.slug !== featured.slug).slice(0, 2)]
+    : posts.slice(0, 3);
+  const rest = featured ? posts.filter((p) => p.slug !== featured.slug) : posts;
   const [latest, ...moreStories] = rest;
   const editGrid = moreStories.slice(0, 6);
-  const recent = BLOG_POSTS.slice(0, 5);
+  const recent = posts.slice(0, 5);
 
   return (
     <main className="bg-ivory text-ink">

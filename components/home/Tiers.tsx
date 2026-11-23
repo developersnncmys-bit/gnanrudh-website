@@ -1,27 +1,21 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
 import SectionHeader from '@/components/home/SectionHeader';
 import WishlistButton from '@/components/shop/WishlistButton';
 import ViewSimilarButton from '@/components/shop/ViewSimilarButton';
-import { SAREES, formatINR, TIERS } from '@/lib/sarees';
+import { formatINR, TIERS } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import { navHref } from '@/lib/soft-launch';
 
-// Hand-picked lineup for the "Featured Products" section. Four hero
-// pieces across tiers so the grid reads as a curated edit rather than a
-// catalog dump. Order matters — leading with Bridal sets the aspirational
-// tone; everyday drops the entry price so the section doesn't feel
-// out of reach.
-const FEATURED_IDS = [
-  'banarasi-raktarani',
-  'kanjivaram-mayura',
-  'patola-rasleela',
-  'mangalagiri-tulsi',
-];
-
+// Shows the first four admin products tagged with the "Featured" badge.
+// Admins control the section by ticking Featured on each product in the
+// admin drawer; no hardcoded id list so the section stays in sync.
 export default function Tiers() {
-  const items = FEATURED_IDS.map((id) => SAREES.find((s) => s.id === id)).filter(
-    (s): s is (typeof SAREES)[number] => Boolean(s),
-  );
+  const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  const items = liveSarees.filter((s) => s.badges.includes('featured')).slice(0, 4);
+  const showSkeleton = sareesLoading || items.length === 0;
 
   return (
     <section className="bg-white py-10 md:py-14">
@@ -34,7 +28,18 @@ export default function Tiers() {
         />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          {items.map((saree) => {
+          {showSkeleton
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <div key={`tier-skel-${i}`} className="bg-white rounded-sm overflow-hidden" aria-hidden>
+                  <div className="relative aspect-[4/5] overflow-hidden bg-ink/5 animate-pulse" />
+                  <div className="p-3 md:p-3.5 space-y-2">
+                    <div className="h-3 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                    <div className="h-5 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                    <div className="h-5 w-1/2 bg-ink/5 rounded-sm animate-pulse" />
+                  </div>
+                </div>
+              ))
+            : items.map((saree) => {
             const tier = TIERS[saree.tier];
             const discount =
               saree.mrp > saree.price

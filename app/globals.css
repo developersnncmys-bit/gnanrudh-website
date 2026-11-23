@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 :root {
+  /* `--font-hero` is an alias for the display font (Italiana). Historically
+     it was a separate next/font instance, but calling Italiana() twice in
+     the same module made Next's font loader drop one of the three generated
+     `.variable` classes from <html> — sans was the one that got dropped,
+     which made the whole body fall back to the browser default. Keeping
+     --font-hero as an alias means every `var(--font-hero)` call site keeps
+     working unchanged. */
+  --font-hero: var(--font-display);
+
   /* Brand palette — House Of GnanRudh official kit (see project_brand_identity_v2 memory) */
   --color-ivory: #FDF6EC;        /* Light cream — primary background */
   --color-parchment: #FDF6EC;    /* Alias for cream (kept for back-compat) */

@@ -124,18 +124,28 @@ const WEAVE_SWATCH: Record<Weave, string> = {
 
 /**
  * Hero image for a saree — the single best photograph for cards and PDP
- * primary frame. Falls back to the catalog placeholder.
+ * primary frame. Admin-uploaded `imageUrls[0]` wins; otherwise fall through
+ * to the hardcoded PRODUCT_IMAGES map (static sarees) and finally the
+ * catalog placeholder.
  */
 export function getProductHero(saree: Saree): string {
+  if (saree.imageUrls && saree.imageUrls.length) return saree.imageUrls[0];
   return PRODUCT_IMAGES[saree.id]?.hero ?? saree.image;
 }
 
 /**
- * Gallery for the PDP — 3-4 distinct frames assembled from the hero, any
- * extras, the weave-level story shot, and the by-weave swatch. Duplicates
- * are filtered out so the rail never shows the same photograph twice.
+ * Gallery for the PDP. Priority:
+ *   1. Admin-uploaded `imageUrls` — every photograph as-is, no padding.
+ *      Admin products get exactly what was uploaded; the thumbnail rail
+ *      length matches what was saved.
+ *   2. Hardcoded PRODUCT_IMAGES map + weave story/swatch — the legacy
+ *      path for static sarees shipped before the admin existed.
  */
 export function getProductGallery(saree: Saree): string[] {
+  if (saree.imageUrls && saree.imageUrls.length) {
+    // Admin products render exactly what was uploaded, nothing added.
+    return saree.imageUrls;
+  }
   const mapped = PRODUCT_IMAGES[saree.id];
   const hero = mapped?.hero ?? saree.image;
   const candidates = [
@@ -191,8 +201,12 @@ const MAX_GALLERY = 4;
 // PDP it only shows other Kanjeevarams. If a weave has no siblings
 // the strip collapses to just this saree and the caller can hide it.
 const PDP_VARIANT_COUNT = 5;
-export function getPdpVariants(saree: Saree): Saree[] {
-  const siblings = SAREES
+// Pass `catalog` (from useLiveSarees) to pull siblings from live admin
+// data. When the catalog hasn't loaded yet the siblings list is empty so
+// the caller can render a skeleton instead of seeded placeholders.
+export function getPdpVariants(saree: Saree, catalog?: Saree[]): Saree[] {
+  if (!catalog || catalog.length === 0) return [saree];
+  const siblings = catalog
     .filter((s) => s.id !== saree.id && s.weave === saree.weave)
     .map((s) => ({ s, d: rgbDistance(s.palette[0] ?? '#000000', saree.palette[0] ?? '#000000') }))
     .sort((a, b) => a.d - b.d)
@@ -220,41 +234,38 @@ export function getColorwaySaree(saree: Saree, colorwayId: string): Saree | null
 }
 
 export function getColorwayGallery(saree: Saree, colorwayId: string): string[] {
-  const colorways = getColorways(saree);
-  if (colorways.length === 0) return getProductGallery(saree);
-  const primary = colorways[0];
-  const selected = colorways.find((c) => c.id === colorwayId) ?? primary;
+  const productImages = saree.imageUrls?.filter(Boolean) || [];
+  const mainTag = saree.imageVariant || '';
 
-  // First colorway = the saree as photographed → its own full gallery
-  // (hero + extras + weave shots) so the default view is unchanged.
-  if (selected.id === primary.id) {
-    return getProductGallery(saree);
+  // Empty colorwayId = "no swatch picked yet" (initial PDP paint). Show
+  // the product-level main images — first paint isn't biased toward any
+  // one colour. Clicking a swatch then swaps below.
+  if (!colorwayId && productImages.length) return productImages;
+
+  // Swatch picked. Resolution order:
+  //   1. If the main image set is tagged with this colour → return the
+  //      main images (admin labelled them for this variant).
+  //   2. If the picked variant has its own per-variant `imageUrls` → use them.
+  //   3. If the main set is "Shared" (untagged) → fall back to it, so a
+  //      product with only a shared gallery still shows photos for every
+  //      swatch.
+  //   4. Otherwise → return [] so ProductGallery shows its "no image"
+  //      placeholder; picking a colour that has no photos is visibly
+  //      acknowledged instead of silently borrowing another colour's set.
+  if (mainTag && mainTag === colorwayId && productImages.length) return productImages;
+
+  if (saree.variants && saree.variants.length) {
+    const picked = saree.variants.find((v) => v.id === colorwayId);
+    const variantImages = picked?.imageUrls?.filter(Boolean) || [];
+    if (variantImages.length) return variantImages;
   }
 
-  // Other colorways → pull from the rest of the catalog, ranked by RGB
-  // distance to the picked hex. For each matching saree we take its
-  // hero AND any extras (multiple views of that saree), then continue
-  // down the ranked list until we have MAX_GALLERY images.
-  const ranked = SAREES
-    .filter((s) => s.id !== saree.id)
-    .map((s) => ({ s, d: rgbDistance(s.palette[0] ?? '#000000', selected.hex) }))
-    .sort((a, b) => a.d - b.d);
-
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const { s } of ranked) {
-    if (out.length >= MAX_GALLERY) break;
-    const mapped = PRODUCT_IMAGES[s.id];
-    const hero = mapped?.hero ?? s.image;
-    const candidates = [hero, ...(mapped?.extras ?? []), s.image];
-    for (const src of candidates) {
-      if (out.length >= MAX_GALLERY) break;
-      if (!src || seen.has(src)) continue;
-      seen.add(src);
-      out.push(src);
-    }
+  if (!mainTag && productImages.length) return productImages;
+  if (productImages.length && !saree.variants?.some((v) => v.imageUrls && v.imageUrls.length)) {
+    // No per-variant images anywhere and main set untagged — fall back to
+    // the shared main gallery for every swatch.
+    return productImages;
   }
-  // Gallery is never allowed to go empty.
-  return out.length > 0 ? out : [getProductHero(saree)];
+  return [];
 }
 

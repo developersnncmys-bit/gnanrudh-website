@@ -51,6 +51,7 @@ const SOFT_LAUNCH_ALLOWED = new Set<string>([
   '/care',
   '/privacy',
   '/terms',
+  '/gst-policy',
   '/order/thank-you',
   '/order/cancelled',
   '/payment/success',

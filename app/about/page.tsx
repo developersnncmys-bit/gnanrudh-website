@@ -4,7 +4,10 @@ import Link from 'next/link';
 import SectionHeader from '@/components/home/SectionHeader';
 import VisionMission from '@/components/about/VisionMission';
 import AnimatedStats from '@/components/about/AnimatedStats';
+import LegalShell from '@/components/legal/LegalShell';
 import { navHref } from '@/lib/soft-launch';
+import { fetchCmsPage } from '@/lib/cms';
+import { parseCmsBody, isStubBody } from '@/lib/cms-markdown';
 
 export const metadata: Metadata = {
   title: 'About Us · House Of GnanRudh',
@@ -114,7 +117,27 @@ const timeline: { year: string; title: string; body: string }[] = [
   },
 ];
 
-export default function AboutPage() {
+// Admin CMS page name — must match the label in the admin seed / Storefront
+// pages table. Non-stub body overrides the bespoke page below.
+const CMS_NAME = 'Our house';
+
+export default async function AboutPage() {
+  const page = await fetchCmsPage(CMS_NAME);
+  if (page && !isStubBody(page.body)) {
+    const parsed = parseCmsBody(page.body || '');
+    return (
+      <LegalShell
+        title={page.name || 'Our House'}
+        lastUpdated={page.updated || ''}
+        intro={parsed.intro}
+        sections={parsed.sections}
+      />
+    );
+  }
+  return <AboutFallback />;
+}
+
+function AboutFallback() {
   const shopHref = navHref('/shop?sort=new');
   return (
     <main className="bg-ivory text-ink">

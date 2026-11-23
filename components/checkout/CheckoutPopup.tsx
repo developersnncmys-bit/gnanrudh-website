@@ -2,14 +2,14 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   LuSmartphone,
   LuCreditCard,
   LuLandmark,
   LuBanknote,
 } from 'react-icons/lu';
-import { SAREES, formatINR } from '@/lib/sarees';
+import { formatINR } from '@/lib/sarees';
 import { getProductHero } from '@/lib/product-images';
 import { useShop } from '@/lib/shop-store';
 import { useAddresses } from '@/lib/addresses';
@@ -23,7 +23,6 @@ import { useRouter } from 'next/navigation';
 
 type ShipMethod = 'standard' | 'express';
 type PayMethod = 'upi' | 'card' | 'netbanking' | 'cod';
-type OrderItem = { saree: (typeof SAREES)[number]; qty: number };
 
 const STANDARD_THRESHOLD = 25_000;
 const EXPRESS_FEE = 500;
@@ -44,20 +43,15 @@ export default function CheckoutPopup() {
   const { open: cartOpen, closeCart } = useCartDrawer();
   const { openLogin } = useLoginModal();
   const { user, hydrated: authHydrated } = useAuth();
-  const { cart, hydrated, cartSubtotal, clearCart } = useShop();
-  const { selected: selectedAddress, openAddressModal } = useAddresses();
+  const { cartItems: items, hydrated, cartSubtotal, clearCart } = useShop();
+  const {
+    addresses,
+    selectedId,
+    selected: selectedAddress,
+    selectAddress,
+    openAddressModal,
+  } = useAddresses();
   const { placeOrder } = useOrders();
-
-  const items: OrderItem[] = useMemo(
-    () =>
-      cart
-        .map((c) => {
-          const saree = SAREES.find((s) => s.id === c.productId);
-          return saree ? { saree, qty: c.quantity } : null;
-        })
-        .filter((x): x is OrderItem => Boolean(x)),
-    [cart],
-  );
 
   const itemCount = items.reduce((sum, i) => sum + i.qty, 0);
 
@@ -89,6 +83,19 @@ export default function CheckoutPopup() {
       setPlacing(false);
     }
   }, [open]);
+
+  // Auto-select a saved address when the checkout opens. Covers two
+  // cases: (a) the local address book was already populated but had no
+  // selectedId cached, and (b) the server sync loaded the book after the
+  // checkout was already open. Prefers a selectedId that still resolves;
+  // otherwise falls back to the first saved address. Keeps the UI out of
+  // the "no address picked" state whenever the user has anything saved.
+  useEffect(() => {
+    if (!open || !addresses.length) return;
+    const stillValid = selectedId && addresses.some((a) => a.id === selectedId);
+    if (stillValid) return;
+    selectAddress(addresses[0].id);
+  }, [open, selectedId, addresses, selectAddress]);
 
   if (!open) return null;
 

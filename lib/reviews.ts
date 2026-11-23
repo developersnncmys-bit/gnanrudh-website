@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { reviewsApi } from './api';
 
 export type Review = {
   id: number;
@@ -45,8 +46,30 @@ export function useReviews(productId: string) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setReviews(readAll().filter((r) => r.productId === productId));
+    // Seed from localStorage first — paints instantly. Then overlay the
+    // server's published reviews for this product on top (customer-made
+    // reviews from the admin CRM). Server reviews win on id collision.
+    const local = readAll().filter((r) => r.productId === productId);
+    setReviews(local);
     setHydrated(true);
+    reviewsApi.list({ pid: productId, limit: 50 })
+      .then((res) => {
+        const serverRows: Review[] = (res.items || []).map((r) => ({
+          id: Number(String(r._id).replace(/\D/g, '').slice(-9)) || Date.now(),
+          productId,
+          name: 'Verified Buyer',
+          rating: Number(r.rating) || 0,
+          comment: r.text || '',
+          createdAt: Date.parse(r.at) || Date.now(),
+        }));
+        setReviews((prev) => {
+          const byId = new Map<number, Review>();
+          for (const r of prev) byId.set(r.id, r);
+          for (const r of serverRows) byId.set(r.id, r);
+          return Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt);
+        });
+      })
+      .catch(() => { /* keep local state */ });
   }, [productId]);
 
   useEffect(() => {

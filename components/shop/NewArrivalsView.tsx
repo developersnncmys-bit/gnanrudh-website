@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SAREES, STANDARD_COLORWAYS, BADGE_LABEL, sareeMatchesColor } from '@/lib/sarees';
-import type { Weave, BadgeKind } from '@/lib/sarees';
+import type { BadgeKind } from '@/lib/sarees';
+import { useLiveCategories, useLiveSarees } from '@/lib/catalog';
 import ProductCard from './ProductCard';
 import { Section, Check, RangeInput, PriceRow, ColorList } from './FilterRailPrimitives';
 import NewArrivalsIntro from './NewArrivalsIntro';
@@ -24,11 +25,6 @@ import FilterTriggerBar from './FilterTriggerBar';
  *   - SAREES / STANDARD_COLORWAYS catalogue data
  */
 
-const WEAVES: Weave[] = [
-  'Kanjivaram', 'Banarasi', 'Mysore Silk', 'Mangalagiri',
-  'Pochampally', 'Gadwal', 'Patola', 'Fancy Sarees', 'Mixed Pattu Sarees',
-];
-
 const PRICE_BRACKETS: { id: string; label: string; min: number; max: number }[] = [
   { id: 'under-5k',  label: 'Under ₹5,000',           min: 0,     max: 5000 },
   { id: '5-15k',     label: '₹5,000 – ₹15,000',       min: 5000,  max: 15000 },
@@ -40,7 +36,7 @@ const PRICE_BRACKETS: { id: string; label: string; min: number; max: number }[] 
 // Availability chips — lifted off the product-card images and into
 // the filter rail as a selectable multi-chip row. Order matches the
 // badge priority used on the card (ready → fast → last).
-const AVAILABILITY_BADGES: BadgeKind[] = ['ready', 'fast', 'last'];
+const AVAILABILITY_BADGES: BadgeKind[] = ['ready', 'fast'];
 
 const DISCOUNT_BANDS: { id: string; label: string; min: number; max: number }[] = [
   { id: '10-20',  label: '10 – 20%',   min: 10,  max: 20 },
@@ -72,13 +68,16 @@ export default function NewArrivalsView() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Backend-managed categories feed the "Shop by Category" filter rail.
+  const { categories: liveCategories } = useLiveCategories();
+
   // Parse filters out of the URL so share links stay round-trip clean.
   // Mirrors the ShopView convention (comma-separated multi-values) for
-  // weave and color, single value for price bracket.
-  const weaves = useMemo<Weave[]>(() => {
-    const csv = searchParams.get('weave');
+  // category and color, single value for price bracket.
+  const categories = useMemo<string[]>(() => {
+    const csv = searchParams.get('cat');
     if (!csv) return [];
-    return csv.split(',').filter((w) => (WEAVES as string[]).includes(w)) as Weave[];
+    return csv.split(',').map((s) => s.trim()).filter(Boolean);
   }, [searchParams]);
   const colors = useMemo<string[]>(() => {
     const csv = searchParams.get('color');
@@ -111,7 +110,7 @@ export default function NewArrivalsView() {
   // the bracket filter uses, so passing `null` deliberately strips them.
   const updateUrl = (
     next: {
-      weaves?: Weave[];
+      categories?: string[];
       colors?: string[];
       bracket?: string | null;
       order?: Sort;
@@ -123,7 +122,7 @@ export default function NewArrivalsView() {
   ) => {
     const params = new URLSearchParams();
     params.set('sort', 'new');
-    const w = next.weaves ?? weaves;
+    const cats = next.categories ?? categories;
     const c = next.colors ?? colors;
     const b = next.bracket === undefined ? bracket : next.bracket;
     const o = next.order ?? sort;
@@ -131,7 +130,7 @@ export default function NewArrivalsView() {
     const px = next.pmax === undefined ? pmax : next.pmax;
     const dd = next.discounts ?? discounts;
     const av = next.availability ?? availability;
-    if (w.length) params.set('weave', w.join(','));
+    if (cats.length) params.set('cat', cats.join(','));
     if (c.length) params.set('color', c.join(','));
     if (b) params.set('bracket', b);
     if (pn) params.set('pmin', pn);
@@ -142,8 +141,8 @@ export default function NewArrivalsView() {
     router.replace(`/shop?${params.toString()}`, { scroll: false });
   };
 
-  const toggleWeave = (w: Weave) =>
-    updateUrl({ weaves: weaves.includes(w) ? weaves.filter((x) => x !== w) : [...weaves, w] });
+  const toggleCategory = (id: string) =>
+    updateUrl({ categories: categories.includes(id) ? categories.filter((x) => x !== id) : [...categories, id] });
   const toggleColor = (id: string) =>
     updateUrl({ colors: colors.includes(id) ? colors.filter((x) => x !== id) : [...colors, id] });
   const selectBracket = (id: string) =>
@@ -177,15 +176,17 @@ export default function NewArrivalsView() {
     updateUrl({ pmin: nextMin, pmax: nextMax });
   };
 
-  // Base catalogue — reverse-ordered so "newest" is most-recent SAREES
-  // entries first. A dedicated `createdAt` field would be more honest
-  // but reverse-iteration matches how the catalogue is seeded.
-  const base = useMemo(() => [...SAREES].reverse(), []);
+  // Live catalogue only — no static fallback. Reverse-ordered so the most
+  // recently added live products land at the top. `loading` drives the
+  // skeleton grid below.
+  const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  const base = useMemo(() => [...liveSarees].reverse(), [liveSarees]);
 
   // Filter + sort pipeline.
   const items = useMemo(() => {
     let list = base;
-    if (weaves.length) list = list.filter((s) => weaves.includes(s.weave));
+    // Admin categories filter — saree.region holds the server's `cat` id.
+    if (categories.length) list = list.filter((s) => categories.includes(s.region));
     if (colors.length) {
       list = list.filter((s) => colors.some((cid) => sareeMatchesColor(s, cid)));
     }
@@ -215,12 +216,12 @@ export default function NewArrivalsView() {
     if (sort === 'price-asc') list = [...list].sort((a, b) => a.price - b.price);
     else if (sort === 'price-desc') list = [...list].sort((a, b) => b.price - a.price);
     return list;
-  }, [base, weaves, colors, bracket, pmin, pmax, discounts, availability, sort]);
+  }, [base, categories, colors, bracket, pmin, pmax, discounts, availability, sort]);
 
   // Per-filter counts — drives the small grey numbers next to each row.
-  const weaveCounts = useMemo(() => {
+  const categoryCounts = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const s of base) map[s.weave] = (map[s.weave] ?? 0) + 1;
+    for (const s of base) if (s.region) map[s.region] = (map[s.region] ?? 0) + 1;
     return map;
   }, [base]);
   const colorCounts = useMemo(() => {
@@ -258,7 +259,7 @@ export default function NewArrivalsView() {
   }, [base]);
 
   const activeCount =
-    weaves.length +
+    categories.length +
     colors.length +
     (bracket ? 1 : 0) +
     (pmin || pmax ? 1 : 0) +
@@ -291,7 +292,20 @@ export default function NewArrivalsView() {
             onSortChange={(v) => updateUrl({ order: v as Sort })}
           />
 
-          {items.length === 0 ? (
+          {(sareesLoading || base.length === 0) ? (
+            <div
+              className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8 pt-8"
+              aria-busy="true"
+            >
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={`new-skel-${i}`} aria-hidden>
+                  <div className="relative overflow-hidden bg-ink/5 aspect-[4/5] rounded-sm animate-pulse" />
+                  <div className="h-4 mt-3 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                  <div className="h-4 mt-2 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : items.length === 0 ? (
             <div className="py-16 text-center text-sm text-gray-600">
               No sarees match these filters.{' '}
               <button
@@ -385,14 +399,14 @@ export default function NewArrivalsView() {
           </div>
         </Section>
 
-        <Section title="Weave">
-          {WEAVES.map((w) => (
+        <Section title="Shop by Category">
+          {liveCategories.map((c) => (
             <Check
-              key={w}
-              label={w}
-              checked={weaves.includes(w)}
-              onChange={() => toggleWeave(w)}
-              count={weaveCounts[w] ?? 0}
+              key={c._id}
+              label={c.name}
+              checked={categories.includes(c._id)}
+              onChange={() => toggleCategory(c._id)}
+              count={categoryCounts[c._id] ?? 0}
             />
           ))}
         </Section>

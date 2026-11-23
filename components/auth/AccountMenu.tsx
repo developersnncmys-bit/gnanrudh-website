@@ -13,6 +13,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { useLoginModal } from '@/lib/login-modal';
 import { navHref } from '@/lib/soft-launch';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Soft-launch gate — mirrors the flag in `components/Nav.tsx`. When
 // true, the account icon renders inert.
@@ -29,6 +30,7 @@ export default function AccountMenu() {
   const { user, hydrated, signOut } = useAuth();
   const { openLogin } = useLoginModal();
   const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -141,7 +143,7 @@ export default function AccountMenu() {
             role="menuitem"
             onClick={() => {
               setOpen(false);
-              signOut();
+              setConfirmOpen(true);
             }}
             className="w-full flex items-center gap-3 px-4 py-2 text-sm text-ink hover:bg-ink/5 transition-colors text-left"
           >
@@ -152,6 +154,20 @@ export default function AccountMenu() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Sign out?"
+        message="You'll be signed out on this device. Your cart and wishlist will be cleared here, but they'll come back when you sign in again."
+        confirmLabel="Sign out"
+        cancelLabel="Stay signed in"
+        danger
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          signOut();
+        }}
+      />
     </div>
   );
 }

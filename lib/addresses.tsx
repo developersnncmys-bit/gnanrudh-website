@@ -6,9 +6,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import { customerAuthApi, getToken, type Customer } from './api';
+import { useAuth } from './auth';
 
 export type Address = {
   id: string;
@@ -78,10 +81,63 @@ export function AddressProvider({ children }: { children: ReactNode }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalNextRoute, setModalNextRoute] = useState<string | null>(null);
 
+  // Hydrate from localStorage once on mount so the UI paints instantly.
   useEffect(() => {
     setState(readStorage());
     setHydrated(true);
   }, []);
+
+  // Self-heal selection: whenever the address list changes, make sure the
+  // selectedId still points at a real address. If it's null or stale, fall
+  // back to the first entry. Guarantees that any consumer (checkout,
+  // account page, address modal) always sees a valid `selected` whenever
+  // the book has anything in it — no "pick an address" dead-end.
+  useEffect(() => {
+    if (!state.addresses.length) return;
+    const stillValid = state.selectedId && state.addresses.some((a) => a.id === state.selectedId);
+    if (stillValid) return;
+    setState((s) => ({ ...s, selectedId: s.addresses[0]?.id ?? null }));
+  }, [state.addresses, state.selectedId]);
+
+  // Sign-in sync: when the customer is signed in, pull the server's book,
+  // union it with whatever was added locally (so pre-sign-in addresses
+  // don't vanish), and push the local-only rows up so the server catches
+  // up. Guarded by a per-session ref so it runs once per sign-in; on
+  // sign-out the ref resets so the next sign-in merges again.
+  const { user, hydrated: authHydrated } = useAuth();
+  const didSyncRef = useRef(false);
+  const signedInEmail = user?.email || null;
+  useEffect(() => {
+    if (!hydrated || !authHydrated) return;
+    if (!signedInEmail) {
+      didSyncRef.current = false;
+      return;
+    }
+    if (didSyncRef.current) return;
+    didSyncRef.current = true;
+    customerAuthApi.listAddresses()
+      .then(({ items }) => {
+        const serverIds = new Set(items.map((i) => i.id));
+        setState((prev) => {
+          const byId = new Map<string, Address>();
+          // Local first so the server copy wins on collision.
+          for (const a of prev.addresses) byId.set(a.id, a);
+          for (const a of items.map(fromServerAddress)) byId.set(a.id, a);
+          const addresses = Array.from(byId.values());
+          // Push local-only rows (ids not yet on the server) so the
+          // account catches up on first sign-in.
+          for (const a of prev.addresses) {
+            if (!serverIds.has(a.id)) {
+              customerAuthApi.addAddress(toServerAddress(a)).catch(() => {});
+            }
+          }
+          const serverDefault = items.find((i) => i.isDefault);
+          const selectedId = prev.selectedId || serverDefault?.id || addresses[0]?.id || null;
+          return { addresses, selectedId };
+        });
+      })
+      .catch(() => { didSyncRef.current = false; });
+  }, [hydrated, authHydrated, signedInEmail]);
 
   useEffect(() => {
     if (!hydrated || typeof window === 'undefined') return;
@@ -117,6 +173,13 @@ export function AddressProvider({ children }: { children: ReactNode }) {
       addresses: [...s.addresses, next],
       selectedId: next.id,
     }));
+    // Mirror to server for signed-in users. The locally-generated id stays
+    // in state; the next refresh will reconcile with the server's id.
+    if (getToken()) {
+      customerAuthApi.addAddress(toServerAddress(next)).catch((err) => {
+        console.warn('[addresses] server add failed:', err?.message || err);
+      });
+    }
     return next;
   }, []);
 
@@ -125,6 +188,13 @@ export function AddressProvider({ children }: { children: ReactNode }) {
       ...s,
       addresses: s.addresses.map((a) => (a.id === id ? { ...a, ...patch } : a)),
     }));
+    if (getToken()) {
+      // Only addresses that came from the server have ids the server
+      // recognises. Locally-generated addresses (addr-xxx) get sent as
+      // new creates — server dedupes on exact field match-of-interest
+      // later if needed; for now, best-effort update, silent on 404.
+      customerAuthApi.updateAddress(id, toServerAddress(patch as Address)).catch(() => {});
+    }
   }, []);
 
   const removeAddress = useCallback((id: string) => {
@@ -134,6 +204,7 @@ export function AddressProvider({ children }: { children: ReactNode }) {
         s.selectedId === id ? (addresses[0]?.id ?? null) : s.selectedId;
       return { addresses, selectedId };
     });
+    if (getToken()) customerAuthApi.deleteAddress(id).catch(() => {});
   }, []);
 
   const selectAddress = useCallback((id: string) => {
@@ -183,4 +254,40 @@ export function useAddresses() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error('useAddresses must be used inside <AddressProvider>');
   return ctx;
+}
+
+// ─── Server mapping ──────────────────────────────────────────────────
+// Backend uses `pin` / `line1,line2` / `country` fields keyed by `id`;
+// the storefront's Address type is a flatter record with `pincode`.
+
+type ServerAddress = Customer['addressBook'][number];
+
+function fromServerAddress(a: ServerAddress): Address {
+  return {
+    id: a.id,
+    fullName: a.name,
+    phone: a.phone,
+    email: '',
+    line1: a.line1,
+    line2: a.line2,
+    city: a.city,
+    state: a.state,
+    pincode: a.pin,
+    country: a.country || 'India',
+  };
+}
+
+function toServerAddress(a: Partial<Address>): Partial<ServerAddress> {
+  return {
+    id: a.id,
+    label: 'Home',
+    name: a.fullName,
+    phone: a.phone,
+    line1: a.line1,
+    line2: a.line2,
+    city: a.city,
+    state: a.state,
+    pin: a.pincode,
+    country: a.country || 'India',
+  };
 }

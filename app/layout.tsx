@@ -33,16 +33,12 @@ const sans = Raleway({
   display: 'swap',
 });
 
-// Italiana (second binding) — reused as the home banner headline face
-// so the Hero, Explore Collections and Bridal Edit titles all share
-// one couture-serif voice. Separate `--font-hero` variable so banner
-// headings can still be theme-switched independently of `--font-display`.
-const hero = Italiana({
-  weight: ['400'],
-  subsets: ['latin'],
-  variable: '--font-hero',
-  display: 'swap',
-});
+// `--font-hero` used to be a second Italiana instance. Calling `Italiana(...)`
+// twice in the same module silently caused Next's font loader to drop one
+// of the three `.variable` classes from the <html> tag, which in turn made
+// `var(--font-sans)` resolve to nothing and the whole site fall back to
+// the browser default (Times New Roman on Windows Chrome). Aliased in CSS
+// to `var(--font-display)` instead — see globals.css `:root { --font-hero }`.
 
 export const metadata: Metadata = {
   title: 'House Of GnanRudh — Heirloom Sarees, Hand-Woven',
@@ -74,19 +70,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${display.variable} ${sans.variable} ${hero.variable}`}
+      className={`${display.variable} ${sans.variable}`}
     >
       <body className="bg-ivory text-ink">
-        <ShopProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <ShopProvider>
             <AudioProvider>
               <SmoothScroll>
                 <SiteShell>{children}</SiteShell>
               </SmoothScroll>
               <PromoSplash />
             </AudioProvider>
-          </AuthProvider>
-        </ShopProvider>
+          </ShopProvider>
+        </AuthProvider>
       </body>
     </html>
   );

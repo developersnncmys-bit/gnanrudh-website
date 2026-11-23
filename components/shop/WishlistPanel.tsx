@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { SAREES } from '@/lib/sarees';
+import type { Saree } from '@/lib/sarees';
 import { useShop } from '@/lib/shop-store';
 import { useLoginModal } from '@/lib/login-modal';
 import { useAuth } from '@/lib/auth';
@@ -13,12 +13,16 @@ export default function WishlistPanel({
 }: {
   heading: { title: string; sub: string };
 }) {
-  const { wishlist, hydrated, clearWishlist } = useShop();
+  const { wishlist, hydrated, clearWishlist, findSaree } = useShop();
   const { openLogin } = useLoginModal();
   const { user, hydrated: authHydrated } = useAuth();
   const [shareNotice, setShareNotice] = useState<string | null>(null);
 
-  const items = SAREES.filter((s) => wishlist.includes(s.id));
+  // Wishlist resolves against the live catalogue, same as the cart. Ids
+  // whose product has been deleted silently drop out.
+  const items: Saree[] = wishlist
+    .map((id) => findSaree(id))
+    .filter((s): s is Saree => Boolean(s));
 
   const handleShare = async () => {
     if (typeof window === 'undefined') return;

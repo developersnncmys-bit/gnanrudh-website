@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import SectionHeader from '@/components/home/SectionHeader';
 import { SAREES } from '@/lib/sarees';
 import { navHref } from '@/lib/soft-launch';
+import { useLiveCategories, useLiveSarees } from '@/lib/catalog';
 
 // Count of pieces per weave (for the "X pieces" badge)
 const weaveCounts: Record<string, number> = {};
@@ -13,11 +14,23 @@ SAREES.forEach((s) => {
   weaveCounts[s.weave] = (weaveCounts[s.weave] ?? 0) + 1;
 });
 
-// Weave catalog for the home rail. Mirrors the navbar order. Image is
-// optional — categories without paired photography on disk fall back to
-// a brand-toned placeholder tile (see render block below).
-// Spelling on disk: kanjeevaram.png, Mysore silk.png, Patola.png — encoded
-// so the path stays correct.
+// Tile shape for the rail. `countKey` is what we look up piece counts
+// against — the static weave key for fallback tiles, the category _id
+// for live tiles (admin products store category as `cat` which maps to
+// `region` on the Saree view-model, see transforms.ts).
+type RailTile = {
+  id: string;
+  name: string;
+  href: string;
+  image?: string;
+  place: string;
+  countKey: string;
+  countMode: 'weave' | 'region';
+};
+
+// Static weave catalog — used as a fallback when the admin hasn't
+// defined any saree-flagged categories yet, or while the fetch is in
+// flight. Mirrors the navbar order.
 type Weave = {
   id: string;
   name: string;
@@ -97,6 +110,49 @@ export default function WeaveRail() {
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(true);
 
+  // Live admin categories drive the rail (with a static weave fallback so
+  // first paint before the fetch lands looks curated). Products are only
+  // used for the "N pieces" badge — when no products are live, counts show
+  // 0 rather than a skeleton, because the category tiles still render.
+  const { categories: liveCategories } = useLiveCategories();
+  const { sarees: liveSarees } = useLiveSarees();
+
+  const tiles: RailTile[] = useMemo(() => {
+    if (liveCategories.length) {
+      return liveCategories.map((c) => ({
+        id: c._id,
+        name: c.name,
+        href: `/shop?cat=${encodeURIComponent(c._id)}`,
+        image: c.image || undefined,
+        // Surface the first associated weave underneath the heading,
+        // matching the geography/style sub-label the static rail used.
+        place: (c.weaves && c.weaves[0]) || '',
+        countKey: c._id,
+        countMode: 'region' as const,
+      }));
+    }
+    return weaves.map((w) => ({
+      id: w.id,
+      name: w.name,
+      href: `/shop?weave=${encodeURIComponent(w.weaveKey)}`,
+      image: w.image,
+      place: w.place,
+      countKey: w.weaveKey,
+      countMode: 'weave' as const,
+    }));
+  }, [liveCategories]);
+
+  // `cat` on the server product maps to `region` on Saree (see
+  // lib/transforms.ts), so category counts come from matching
+  // saree.region against the category _id.
+  const countFor = useCallback(
+    (tile: RailTile) => {
+      if (tile.countMode === 'weave') return weaveCounts[tile.countKey] ?? 0;
+      return liveSarees.filter((s) => s.region === tile.countKey).length;
+    },
+    [liveSarees],
+  );
+
   const updateButtons = useCallback(() => {
     const el = railRef.current;
     if (!el) return;
@@ -159,11 +215,9 @@ export default function WeaveRail() {
           ref={railRef}
           className="flex gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory pt-3 pb-2"
         >
-          {weaves.map((w) => {
-            const count = weaveCounts[w.weaveKey] ?? 0;
-            const weaveHref = navHref(
-              `/shop?weave=${encodeURIComponent(w.weaveKey)}`,
-            );
+          {tiles.map((w) => {
+            const count = countFor(w);
+            const weaveHref = navHref(w.href);
             const WeaveTag = weaveHref ? Link : 'span';
             const weaveProps = weaveHref
               ? {

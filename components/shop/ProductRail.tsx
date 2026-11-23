@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { SAREES } from '@/lib/sarees';
+import type { Saree } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import ProductCard from './ProductCard';
 
 export default function ProductRail({
@@ -15,9 +16,13 @@ export default function ProductRail({
   const [canPrev, setCanPrev] = useState(false);
   const [canNext, setCanNext] = useState(true);
 
+  // Resolve ids against the live catalogue. Rows whose pid is no longer
+  // live (deleted / hidden) silently drop out; if all drop out, the whole
+  // rail hides itself via the `items.length === 0` early return below.
+  const { sarees: liveSarees } = useLiveSarees();
   const items = ids
-    .map((id) => SAREES.find((s) => s.id === id))
-    .filter((s): s is (typeof SAREES)[number] => Boolean(s));
+    .map((id) => liveSarees.find((s) => s.id === id))
+    .filter((s): s is Saree => Boolean(s));
 
   useEffect(() => {
     const el = railRef.current;

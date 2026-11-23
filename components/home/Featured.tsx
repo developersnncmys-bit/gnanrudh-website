@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES, formatINR, TIERS } from '@/lib/sarees';
+import { formatINR, TIERS, type Saree } from '@/lib/sarees';
+import { useLiveSarees } from '@/lib/catalog';
 import WishlistButton from '@/components/shop/WishlistButton';
 import ViewSimilarButton from '@/components/shop/ViewSimilarButton';
 import AddToCartButton from '@/components/shop/AddToCartButton';
@@ -12,11 +13,24 @@ import { navHref } from '@/lib/soft-launch';
 
 type Tab = 'new' | 'bridal' | 'festive' | 'everyday';
 
-const tabs: { id: Tab; label: string; filter: (s: typeof SAREES[number]) => boolean }[] = [
+// Match against admin-tagged occasions (case-insensitive). A product's
+// `occasions` array can hold parent names ("Festive"), sub-occasion names
+// ("Diwali"), or both — the tab shows it as long as any entry matches the
+// tab label. Falls back to the price-tier bucket when the product has no
+// occasion tags at all, so legacy data still lands somewhere.
+const hasOccasion = (s: Saree, name: string) => {
+  const needle = name.toLowerCase();
+  const occs = (s.occasions || []).map((o) => o.toLowerCase());
+  if (occs.some((o) => o.includes(needle))) return true;
+  if (!occs.length && s.tier === needle) return true;
+  return false;
+};
+
+const tabs: { id: Tab; label: string; filter: (s: Saree) => boolean }[] = [
   { id: 'new', label: 'New In', filter: () => true },
-  { id: 'bridal', label: 'Bridal', filter: (s) => s.tier === 'bridal' },
-  { id: 'festive', label: 'Festive', filter: (s) => s.tier === 'festive' },
-  { id: 'everyday', label: 'Everyday', filter: (s) => s.tier === 'everyday' },
+  { id: 'bridal', label: 'Bridal', filter: (s) => hasOccasion(s, 'bridal') },
+  { id: 'festive', label: 'Festive', filter: (s) => hasOccasion(s, 'festive') },
+  { id: 'everyday', label: 'Everyday', filter: (s) => hasOccasion(s, 'everyday') },
 ];
 
 // Per-saree rating + review counts. These are display-only stats — when
@@ -56,8 +70,17 @@ const productMeta: Record<string, { rating: number; reviews: number }> = {
 
 export default function Featured() {
   const [tab, setTab] = useState<Tab>('new');
-
-  const items = SAREES.filter(tabs.find((t) => t.id === tab)!.filter).slice(0, 8);
+  // Tabs filter the whole live catalogue by tier (Bridal / Festive /
+  // Everyday), with "New In" showing only products the admin has flagged
+  // with the `newin` badge. No cross-intersection — each tab is a clean
+  // view of what sits in that category.
+  const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  const items = (
+    tab === 'new'
+      ? liveSarees.filter((s) => s.badges.includes('newin'))
+      : liveSarees.filter(tabs.find((t) => t.id === tab)!.filter)
+  ).slice(0, 8);
+  const showSkeleton = sareesLoading || items.length === 0;
 
   return (
     <section className="bg-bone py-10 md:py-14">
@@ -87,7 +110,18 @@ export default function Featured() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-          {items.map((saree) => {
+          {showSkeleton
+            ? Array.from({ length: 8 }).map((_, i) => (
+                <div key={`feat-skel-${i}`} className="bg-white rounded-sm overflow-hidden" aria-hidden>
+                  <div className="relative aspect-[4/5] overflow-hidden bg-ink/5 animate-pulse" />
+                  <div className="p-3 md:p-3.5 space-y-2">
+                    <div className="h-3 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
+                    <div className="h-4 w-3/4 bg-ink/5 rounded-sm animate-pulse" />
+                    <div className="h-4 w-1/2 bg-ink/5 rounded-sm animate-pulse" />
+                  </div>
+                </div>
+              ))
+            : items.map((saree) => {
             const tier = TIERS[saree.tier];
             const meta = productMeta[saree.id] ?? { rating: 4.7, reviews: 50 };
             const discount =

@@ -404,22 +404,33 @@ export default function AddressModal() {
                   required
                 />
                 <div>
-                  <Field
-                    label="Phone"
-                    type="tel"
-                    value={draft.phone}
-                    onChange={(v) =>
-                      // Strip non-digits and cap at 10 — mirrors the
-                      // pincode field. The Indian-mobile rule (must
-                      // start with 6/7/8/9) is enforced inline via the
-                      // hint below and again at submit-time.
-                      setDraft({ ...draft, phone: v.replace(/\D/g, '').slice(0, 10) })
-                    }
-                    autoComplete="tel"
-                    placeholder="9876543210"
-                    inputMode="numeric"
-                    required
-                  />
+                  <label className="block">
+                    <span className="block text-xs font-medium text-ink/65 mb-1">
+                      Phone<span className="text-maroon ml-0.5">*</span>
+                    </span>
+                    <div className="flex w-full border border-ink/20 bg-white focus-within:border-ink transition-colors">
+                      <span className="px-3 py-2.5 text-sm text-ink/55 border-r border-ink/20 bg-ink/5 select-none">
+                        +91
+                      </span>
+                      <input
+                        type="tel"
+                        value={draft.phone}
+                        onChange={(e) =>
+                          // Strip non-digits and cap at 10 — mirrors the
+                          // pincode field. The Indian-mobile rule (must
+                          // start with 6/7/8/9) is enforced inline via the
+                          // hint below and again at submit-time.
+                          setDraft({ ...draft, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })
+                        }
+                        autoComplete="tel-national"
+                        placeholder="9876543210"
+                        inputMode="numeric"
+                        maxLength={10}
+                        required
+                        className="w-full bg-transparent px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:outline-none"
+                      />
+                    </div>
+                  </label>
                   <PhoneHint value={draft.phone} />
                 </div>
               </div>
