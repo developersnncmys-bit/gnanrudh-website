@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   SAREES,
@@ -259,9 +260,9 @@ export default function CategoryTierView({ tier }: { tier: Tier }) {
 
       <div className="max-w-[1720px] mx-auto px-4 lg:px-8 py-8">
         <nav aria-label="Breadcrumb" className="text-xs text-gray-500 mb-3">
-          <span className="hover:text-gray-900 cursor-default">Home</span>
+          <Link href="/" className="hover:text-gray-900">Home</Link>
           <span className="mx-1.5">/</span>
-          <span className="text-gray-900">{TIER_LABEL[tier]}</span>
+          <span className="text-gray-900" aria-current="page">{TIER_LABEL[tier]}</span>
         </nav>
 
         <section>

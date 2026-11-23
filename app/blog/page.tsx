@@ -35,6 +35,12 @@ async function loadPosts(): Promise<BlogPost[]> {
   return BLOG_POSTS;
 }
 
+// Slug a category name into a stable in-page anchor id. Matches what the
+// chips use for their href="#..." targets.
+function categorySlug(name: string): string {
+  return name.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 export default async function BlogPage() {
   const posts = await loadPosts();
   // Carousel takes the first featured post + the next two most recent so
@@ -47,6 +53,14 @@ export default async function BlogPage() {
   const [latest, ...moreStories] = rest;
   const editGrid = moreStories.slice(0, 6);
   const recent = posts.slice(0, 5);
+  // Posts bucketed by category for the per-category sections lower down.
+  // Only categories with at least one post render a section, so empty
+  // categories don't leave the page with "no stories yet" placeholders.
+  const postsByCategory = new Map<string, BlogPost[]>();
+  for (const c of BLOG_CATEGORIES) postsByCategory.set(c, []);
+  for (const p of posts) {
+    if (postsByCategory.has(p.category)) postsByCategory.get(p.category)!.push(p);
+  }
 
   return (
     <main className="bg-ivory text-ink">
@@ -64,7 +78,15 @@ export default async function BlogPage() {
           <div className="flex items-center justify-center gap-6 md:gap-10 lg:gap-14 flex-wrap">
             {BLOG_CATEGORIES.map((c, i) => (
               <div key={c} className="flex items-center gap-6 md:gap-10 lg:gap-14">
-                <span className="group relative inline-block text-sm md:text-[0.95rem] font-semibold text-ink/80 hover:text-maroon-deep transition-colors cursor-default whitespace-nowrap">
+                {/* Anchor to the matching category section below. Plain
+                    <a> instead of <Link> so the hash doesn't push onto
+                    the history stack as a separate route — a scroll is
+                    not a navigation. scroll-smooth on <html> handles the
+                    animation (CSS-level, respects reduced-motion). */}
+                <a
+                  href={`#${categorySlug(c)}`}
+                  className="group relative inline-block text-sm md:text-[0.95rem] font-semibold text-ink/80 hover:text-maroon-deep transition-colors whitespace-nowrap"
+                >
                   {c}
                   <span
                     aria-hidden
@@ -74,7 +96,7 @@ export default async function BlogPage() {
                         'linear-gradient(90deg, #8A5A1F 0%, #C8923F 50%, #8A5A1F 100%)',
                     }}
                   />
-                </span>
+                </a>
                 {i < BLOG_CATEGORIES.length - 1 && (
                   <span
                     aria-hidden
@@ -100,29 +122,40 @@ export default async function BlogPage() {
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 max-w-[1300px] mx-auto">
-            {[latest, ...editGrid.slice(0, 2)].map((p) => (
+            {[latest, ...editGrid.slice(0, 2)].filter(Boolean).map((p) => (
               <VerticalCard key={p.slug} post={p} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* The House Edit — 3-column grid of the rest of the posts. */}
-      <section className="bg-bone py-12 md:py-16">
-        <div className="max-w-[1720px] mx-auto px-6 lg:px-10">
-          <SectionHeader
-            title="The House Edit"
-            description="Weave stories, bridal diaries and care guides — curated reads from the editors of the house."
-            showDividers={false}
-          />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 max-w-[1300px] mx-auto">
-            {editGrid.slice(2).concat(moreStories.slice(6)).map((p) => (
-              <VerticalCard key={p.slug} post={p} />
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Per-category sections. One section per BLOG_CATEGORY that has at
+          least one post; id matches the chip's href="#..." so clicking a
+          chip above scrolls here. `scroll-mt` gives the heading a top
+          offset so the sticky nav doesn't cover it after the jump. */}
+      {BLOG_CATEGORIES.filter((c) => (postsByCategory.get(c) ?? []).length > 0).map((c, idx) => {
+        const items = postsByCategory.get(c) ?? [];
+        return (
+          <section
+            key={c}
+            id={categorySlug(c)}
+            className={`${idx % 2 === 0 ? 'bg-bone' : 'bg-white'} py-12 md:py-16 scroll-mt-[120px]`}
+          >
+            <div className="max-w-[1720px] mx-auto px-6 lg:px-10">
+              <SectionHeader
+                title={c}
+                description={`${items.length} ${items.length === 1 ? 'story' : 'stories'} in ${c}.`}
+                showDividers={false}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 max-w-[1300px] mx-auto">
+                {items.map((p) => (
+                  <VerticalCard key={p.slug} post={p} />
+                ))}
+              </div>
+            </div>
+          </section>
+        );
+      })}
 
       {/* Closing band — centred editorial letter from the Journal + a
           horizontal strip of top reads below. Reads as one cohesive

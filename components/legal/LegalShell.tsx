@@ -107,9 +107,9 @@ export default function LegalShell({
               <section
                 key={s.id}
                 id={s.id}
-                className={i > 0 ? 'mt-10 pt-10 border-t border-ink/10' : ''}
+                className={`scroll-mt-[200px] ${i > 0 ? 'mt-10 pt-10 border-t border-ink/10' : ''}`}
               >
-                <h2 className="text-lg md:text-xl font-bold text-ink mb-4 scroll-mt-[200px]">
+                <h2 className="text-lg md:text-xl font-bold text-ink mb-4">
                   {s.title}
                 </h2>
                 <div className="text-sm text-ink/80 leading-relaxed space-y-3">
@@ -118,7 +118,7 @@ export default function LegalShell({
               </section>
             ))}
 
-            <div className="mt-12 pt-6 border-t border-ink/10 text-xs text-ink/60 leading-relaxed">
+            <div className="mt-12 pt-6 border-t border-ink/10 text-base md:text-lg text-ink/75 leading-relaxed">
               Questions? Email{' '}
               <a
                 href="mailto:hello@houseofgnanrudh.com"

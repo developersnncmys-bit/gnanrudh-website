@@ -115,7 +115,7 @@ export default function OrderCancelledView() {
             {order ? (
               <ul className="divide-y divide-ink/10">
                 {order.items.map((it) => (
-                  <li key={it.productId} className="flex gap-3 p-3 opacity-75">
+                  <li key={it.productId} className="flex gap-3 p-3">
                     <Link
                       href={`/shop/${it.productId}`}
                       className="relative w-14 h-18 shrink-0 overflow-hidden bg-bone"
@@ -124,14 +124,14 @@ export default function OrderCancelledView() {
                       <Image src={it.image} alt={it.name} fill sizes="56px" className="object-cover" />
                     </Link>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] text-ink/55">{it.weave}</div>
+                      <div className="text-[11px] text-ink/75">{it.weave}</div>
                       <Link
                         href={`/shop/${it.productId}`}
                         className="text-sm font-semibold text-ink hover:text-maroon line-clamp-2"
                       >
                         {it.name}
                       </Link>
-                      <div className="text-[11px] text-ink/55 mt-0.5 tabular-nums">
+                      <div className="text-xs text-ink/75 mt-0.5 tabular-nums">
                         Qty {it.qty} × {formatINR(it.unitPrice)}
                       </div>
                     </div>
