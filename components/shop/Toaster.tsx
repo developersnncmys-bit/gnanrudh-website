@@ -12,7 +12,7 @@ export default function Toaster() {
   const { openCart } = useCartDrawer();
 
   return (
-    <div className="fixed bottom-5 right-5 z-[80] flex flex-col gap-3 w-[320px] max-w-[calc(100vw-2.5rem)] pointer-events-none">
+    <div className="fixed top-24 right-5 z-[80] flex flex-col gap-3 w-[320px] max-w-[calc(100vw-2.5rem)] pointer-events-none">
       {toasts.map((t) => {
         const product = findSaree(t.productId);
         const isAdd = t.kind === 'cart-add' || t.kind === 'wishlist-add';

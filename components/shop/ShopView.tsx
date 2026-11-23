@@ -196,6 +196,14 @@ export default function ShopView() {
     if (!searchParams.get('cat')) return false;
     return hasOnlyAllowedExtras(new Set(['cat']));
   })();
+  // Free-text search landing — `?q=<query>` from the storefront search bar.
+  // Any value passes the gate; the filter block below matches against the
+  // product's name / weave / story. Previously this was missing, so the
+  // search bar's fallback route silently bounced the shopper home.
+  const isLiveQuery = (() => {
+    if (!searchParams.get('q')) return false;
+    return hasOnlyAllowedExtras(new Set(['q']));
+  })();
   // Bare /shop (no query params) OR any /shop?view=all[&…filters] drill-down
   // — the "All Sarees" landing + its in-drawer filter permutations.
   const isLiveAll =
@@ -211,7 +219,8 @@ export default function ShopView() {
     !isLiveTier &&
     !isLivePriceRange &&
     !isLiveBestseller &&
-    !isLiveCategory;
+    !isLiveCategory &&
+    !isLiveQuery;
   useEffect(() => {
     if (softGated) router.replace('/');
   }, [softGated, router]);
@@ -285,6 +294,17 @@ export default function ShopView() {
   // ── Filter + sort the catalog ─────────────────────────────────────────
   const filtered = useMemo(() => {
     let items = liveSarees.slice();
+
+    // Free-text search (`?q=…`) — case-insensitive substring match against
+    // the fields a shopper actually types: product name, weave and story.
+    // Applied first so downstream count/filter rails see a narrowed set.
+    const q = (searchParams.get('q') || '').trim().toLowerCase();
+    if (q) {
+      items = items.filter((s) => {
+        const hay = `${s.name} ${s.weave} ${s.story || ''}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
 
     if (filters.tiers.length) {
       // Prefer admin-tagged occasions over the auto-computed price tier:

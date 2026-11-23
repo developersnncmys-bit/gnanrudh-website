@@ -449,7 +449,7 @@ export default function LoginModal() {
                             : 'border-ink/20 focus-within:border-ink'
                         }`}
                       >
-                        <span className="px-3 py-3 text-sm text-ink/55 border-r border-ink/20 bg-ink/5 select-none">
+                        <span className="px-2 py-3 text-sm text-ink/55 border-r border-ink/20 bg-ink/5 select-none shrink-0">
                           +91
                         </span>
                         <input
@@ -464,7 +464,7 @@ export default function LoginModal() {
                           onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
                           onBlur={() => markTouched('mobile')}
                           aria-invalid={!!mobileError}
-                          className="w-full bg-transparent px-3 py-3 text-sm text-ink placeholder:text-ink/40 focus:outline-none"
+                          className="w-full min-w-0 bg-transparent px-2 py-3 text-sm text-ink placeholder:text-ink/40 focus:outline-none"
                         />
                       </div>
                       <InlineError msg={mobileError} />
@@ -517,11 +517,11 @@ export default function LoginModal() {
                     />
                     <span>
                       I accept that I have read &amp; understood{' '}
-                      <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">
+                      <Link href="/privacy" onClick={closeLogin} className="underline underline-offset-2 hover:text-ink">
                         Privacy Policy
                       </Link>{' '}
                       and{' '}
-                      <Link href="/terms" className="underline underline-offset-2 hover:text-ink">
+                      <Link href="/terms" onClick={closeLogin} className="underline underline-offset-2 hover:text-ink">
                         T&amp;Cs.
                       </Link>
                     </span>

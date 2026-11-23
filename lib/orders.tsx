@@ -17,6 +17,11 @@ export type ShipMethod = 'standard' | 'express';
 
 export type OrderItem = {
   productId: string;
+  // Optional variant id the piece-reservation needs. The cart doesn't
+  // currently force a colour pick before Add-to-Cart, so the checkout
+  // picks the first in-stock variant as a sensible default and sets it
+  // here. Missing = backend rejects with 409.
+  variantId?: string;
   name: string;
   weave: string;
   qty: number;
@@ -147,7 +152,7 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
     // the UX never blocks on network.
     if (getToken()) {
       ordersApi.create({
-        items: input.items.map((it) => ({ pid: it.productId, qty: it.qty })),
+        items: input.items.map((it) => ({ pid: it.productId, vid: it.variantId, qty: it.qty })),
         shipping: input.shippingFee,
         coupon: input.promoCode,
         paymentMethod: input.payMethod,

@@ -19,6 +19,8 @@ import { useLoginModal } from '@/lib/login-modal';
 import { useAuth } from '@/lib/auth';
 import { useScrollLock } from '@/lib/scroll-lock';
 import { useOrders, type OrderItem as OrderItemRecord } from '@/lib/orders';
+import { ordersApi, paymentApi } from '@/lib/api';
+import { openRazorpay } from '@/lib/razorpay';
 import { useRouter } from 'next/navigation';
 
 type ShipMethod = 'standard' | 'express';
@@ -132,7 +134,7 @@ export default function CheckoutPopup() {
     router.push(path);
   };
 
-  const onPlaceOrder = (e: FormEvent) => {
+  const onPlaceOrder = async (e: FormEvent) => {
     e.preventDefault();
     if (placing) return;
     // Defence-in-depth: if the user reached the popup without being
@@ -149,66 +151,192 @@ export default function CheckoutPopup() {
       return;
     }
     setPlacing(true);
-    // Simulated payment latency. With a real gateway, this is where we'd
-    // open Razorpay / Stripe and wait for their callback to drive routing.
-    window.setTimeout(() => {
-      const orderItems: OrderItemRecord[] = items.map(({ saree, qty }) => ({
+
+    // Captured once up-front so our local-state mirror stays consistent
+    // with what the server stored even if items change between create and
+    // post-payment routing.
+    const orderItems: OrderItemRecord[] = items.map(({ saree, qty }) => {
+      // Pick the first variant that still has stock so piece reservation
+      // on the backend lands on something fulfillable. Falls back to the
+      // first variant if none report stock (the admin numbers are
+      // denormalised — the piece-level check is authoritative). The cart
+      // doesn't force a colour pick before Add to Cart yet, so this is
+      // the "default colour" behaviour.
+      const variants = saree.variants || [];
+      const pickedVariant =
+        variants.find((v) => (v.stock ?? 0) > 0) ?? variants[0];
+      return {
         productId: saree.id,
+        variantId: pickedVariant?.id,
         name: saree.name,
         weave: saree.weave,
         qty,
         unitPrice: saree.price,
         image: getProductHero(saree),
-      }));
-      const order = placeOrder({
-        items: orderItems,
-        itemCount,
-        address: {
-          fullName: selectedAddress.fullName,
-          phone: selectedAddress.phone,
-          email: selectedAddress.email,
-          line1: selectedAddress.line1,
-          line2: selectedAddress.line2,
-          city: selectedAddress.city,
-          state: selectedAddress.state,
-          pincode: selectedAddress.pincode,
-          country: selectedAddress.country,
-        },
-        payMethod,
-        shipMethod,
-        // COD orders are unpaid until delivery. Everything else is treated
-        // as paid the moment we land back from the simulated gateway.
-        paid: payMethod !== 'cod',
-        promoCode,
-        subtotal: cartSubtotal,
+      };
+    });
+    const addressSnapshot = {
+      fullName: selectedAddress.fullName,
+      phone: selectedAddress.phone,
+      email: selectedAddress.email,
+      line1: selectedAddress.line1,
+      line2: selectedAddress.line2,
+      city: selectedAddress.city,
+      state: selectedAddress.state,
+      pincode: selectedAddress.pincode,
+      country: selectedAddress.country,
+    };
+
+    // 1) Create the order on the server. This also reserves pieces so no
+    //    one else can buy the same variants while the user is on the
+    //    Razorpay modal. A 409 means a variant went out of stock between
+    //    adding to cart and clicking Pay — surface that cleanly.
+    let serverOrder: { _id: string; total: number };
+    try {
+      serverOrder = await ordersApi.create({
+        // `vid` is required by the backend's piece-reservation step —
+        // without it `reservePiecesForOrder` can't find a matching Piece
+        // and bails with 409 "Not enough stock". See the variant pick
+        // above in `orderItems`.
+        items: orderItems.map((it) => ({ pid: it.productId, vid: it.variantId, qty: it.qty })),
+        shipping: shippingFee + codFee,
         discount,
-        shippingFee,
-        codFee,
-        tax,
-        total,
+        coupon: promoCode,
+        paymentMethod: payMethod,
+        address: {
+          pin: addressSnapshot.pincode,
+          label: 'Checkout',
+          name: addressSnapshot.fullName,
+          phone: addressSnapshot.phone,
+          line1: addressSnapshot.line1,
+          line2: addressSnapshot.line2,
+          city: addressSnapshot.city,
+          state: addressSnapshot.state,
+          country: addressSnapshot.country,
+        },
       });
+    } catch (err) {
+      setPlacing(false);
+      alert(`Could not create order: ${(err as Error).message || 'please try again'}`);
+      return;
+    }
+
+    // Mirror into local orders state so the Orders page and Thank-You
+    // interstitial can render instantly without a round-trip. The server
+    // is already the source of truth for status changes after this point.
+    const local = placeOrder({
+      items: orderItems,
+      itemCount,
+      address: addressSnapshot,
+      payMethod,
+      shipMethod,
+      paid: false, // flipped true after verify for prepaid; stays false for COD
+      promoCode,
+      subtotal: cartSubtotal,
+      discount,
+      shippingFee,
+      codFee,
+      tax,
+      total,
+    });
+    // Align the local record to the server's authoritative id so retries
+    // / cancellations through the Orders page talk to the right doc.
+    local.id = serverOrder._id;
+
+    // 2) COD skips Razorpay entirely — the money comes in on delivery, so
+    //    there's nothing for the gateway to confirm. The order stays
+    //    'Payment pending' server-side; the admin flips it on fulfilment.
+    if (payMethod === 'cod') {
       clearCart();
       setPlacing(false);
-      // COD skips the payment-success interstitial — there's no payment
-      // to confirm — and goes straight to the order Thank-You page.
-      if (payMethod === 'cod') {
-        const qs = new URLSearchParams({
-          id: order.id,
-          email: order.address.email,
-          phone: order.address.phone,
-          ship: order.shipMethod,
-        });
-        closeAllAndGo(`/order/thank-you?${qs.toString()}`);
-      } else {
-        const qs = new URLSearchParams({
-          order: order.id,
-          method: order.payMethod,
-          amount: String(order.total),
-          ref: `TXN${Date.now().toString().slice(-8)}`,
-        });
-        closeAllAndGo(`/payment/success?${qs.toString()}`);
-      }
-    }, 900);
+      const qs = new URLSearchParams({
+        id: serverOrder._id,
+        email: addressSnapshot.email,
+        phone: addressSnapshot.phone,
+        ship: shipMethod,
+      });
+      closeAllAndGo(`/order/thank-you?${qs.toString()}`);
+      return;
+    }
+
+    // 3) Ask the backend to create a Razorpay order (uses the secret key
+    //    server-side) and return the ids the Checkout Standard modal needs.
+    let rzpInit: Awaited<ReturnType<typeof paymentApi.createOrder>>;
+    try {
+      rzpInit = await paymentApi.createOrder(serverOrder._id);
+    } catch (err) {
+      setPlacing(false);
+      alert(`Could not start payment: ${(err as Error).message || 'please try again'}`);
+      return;
+    }
+
+    // 4) Open the Razorpay modal. The callbacks fire asynchronously, so
+    //    `placing` stays true until success / failure / dismiss resolves.
+    try {
+      await openRazorpay({
+        keyId: rzpInit.keyId,
+        rzpOrderId: rzpInit.rzpOrderId,
+        amount: rzpInit.amount,
+        currency: rzpInit.currency,
+        description: `Order ${serverOrder._id}`,
+        prefill: {
+          name: rzpInit.customer.name || addressSnapshot.fullName,
+          email: rzpInit.customer.email || addressSnapshot.email,
+          contact: rzpInit.customer.phone || addressSnapshot.phone,
+        },
+        onSuccess: async (payload) => {
+          try {
+            // 5) Server-side HMAC verify + mark order Paid. Only after this
+            //    returns do we trust the payment and route to success.
+            await paymentApi.verify({
+              orderId: serverOrder._id,
+              razorpay_order_id: payload.razorpay_order_id,
+              razorpay_payment_id: payload.razorpay_payment_id,
+              razorpay_signature: payload.razorpay_signature,
+            });
+            clearCart();
+            setPlacing(false);
+            const qs = new URLSearchParams({
+              order: serverOrder._id,
+              method: payMethod,
+              amount: String(serverOrder.total),
+              ref: payload.razorpay_payment_id,
+            });
+            closeAllAndGo(`/payment/success?${qs.toString()}`);
+          } catch (err) {
+            // Payment went through but our verify endpoint didn't complete
+            // (network blip, 500, whatever). The money is with Razorpay; the
+            // retry page refetches the order and — because the webhook will
+            // mark it Paid independently — the user usually sees a Paid
+            // state and gets forwarded to /payment/success automatically.
+            // The ref is in the URL so support can quote it if needed.
+            setPlacing(false);
+            console.warn('[checkout] verify failed, routing to /payment/retry', err);
+            const qs = new URLSearchParams({
+              order: serverOrder._id,
+              ref: payload.razorpay_payment_id,
+            });
+            closeAllAndGo(`/payment/retry?${qs.toString()}`);
+          }
+        },
+        onDismiss: async () => {
+          // User closed the modal without paying. Release the reserved
+          // pieces so stock becomes available to others, mark the order
+          // Cancelled, and let the user keep shopping.
+          setPlacing(false);
+          try { await paymentApi.cancel(serverOrder._id); } catch { /* swallow */ }
+        },
+        onFailure: async () => {
+          setPlacing(false);
+          try { await paymentApi.cancel(serverOrder._id); } catch { /* swallow */ }
+          alert('Payment failed. Please try again or pick a different payment method.');
+        },
+      });
+    } catch (err) {
+      setPlacing(false);
+      try { await paymentApi.cancel(serverOrder._id); } catch { /* swallow */ }
+      alert(`Payment could not open: ${(err as Error).message}`);
+    }
   };
 
   // Simulates the user clicking back on the payment gateway — closes the

@@ -56,6 +56,7 @@ const SOFT_LAUNCH_ALLOWED = new Set<string>([
   '/order/cancelled',
   '/payment/success',
   '/payment/cancelled',
+  '/payment/retry',
 ]);
 
 /**

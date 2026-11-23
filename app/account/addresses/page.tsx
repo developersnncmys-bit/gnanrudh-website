@@ -86,7 +86,12 @@ export default function AddressesPage() {
                 <span className="text-ink/30">·</span>
                 <button
                   type="button"
-                  onClick={() => removeAddress(a.id)}
+                  onClick={() => {
+                    const label = a.fullName || 'this address';
+                    if (window.confirm(`Delete ${label}? This can't be undone.`)) {
+                      removeAddress(a.id);
+                    }
+                  }}
                   className="text-xs font-semibold text-ink hover:text-maroon underline underline-offset-2"
                 >
                   Delete

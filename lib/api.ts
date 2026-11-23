@@ -316,19 +316,90 @@ export type CustomerOrder = {
   deliveredAt?: string | null;
 };
 
+export type RefundEligibility = {
+  eligible: boolean;
+  deliveredAt?: string | null;
+  daysSinceDelivery?: number;
+  windowDays?: number;
+  reason?: string;
+};
+
+export type CustomerReturn = {
+  _id: string;
+  oid: string;
+  pid?: string | null;
+  cid: string;
+  reason: string;
+  requested: string;
+  amount: number;
+  status: string;
+  deliveredAt?: string | null;
+  windowDays?: number;
+  photos?: string[];
+};
+
 export const ordersApi = {
-  list: () => api<ServerListResponse<CustomerOrder>>(`/api/customer/orders`),
-  get: (id: string) => api<CustomerOrder>(`/api/customer/orders/${encodeURIComponent(id)}`),
+  list: () => api<ServerListResponse<CustomerOrder>>(`/api/customer-auth/orders`),
+  get: (id: string) => api<CustomerOrder>(`/api/customer-auth/orders/${encodeURIComponent(id)}`),
   create: (payload: {
     items: Array<{ pid: string; vid?: string | null; qty: number }>;
     shipping?: number;
     coupon?: string | null;
+    discount?: number;
     paymentMethod?: string;
-    addressId?: string;
     address?: { pin: string; [k: string]: any };
-  }) => api<CustomerOrder>(`/api/customer/orders`, { method: 'POST', body: JSON.stringify(payload) }),
+  }) => api<CustomerOrder>(`/api/customer-auth/orders`, { method: 'POST', body: JSON.stringify(payload) }),
   cancel: (id: string) =>
-    api<CustomerOrder>(`/api/customer/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+    api<CustomerOrder>(`/api/customer-auth/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+  // Returns / refund requests — admin takes over on the backend once we
+  // create the request. `refundEligibility` is cheap enough to call before
+  // showing the button so the UI never offers an action the server will
+  // reject (out of window, order not delivered, etc.).
+  refundEligibility: (id: string) =>
+    api<RefundEligibility>(`/api/customer-auth/orders/${encodeURIComponent(id)}/refund-eligibility`),
+  requestRefund: (id: string, payload: { reason: string; pid?: string; photos?: string[] }) =>
+    api<CustomerReturn>(`/api/customer-auth/orders/${encodeURIComponent(id)}/refund-request`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  listReturns: (id: string) =>
+    api<{ items: CustomerReturn[]; total: number }>(
+      `/api/customer-auth/orders/${encodeURIComponent(id)}/returns`,
+    ),
+};
+
+// Razorpay payment flow. Checkout opens the modal between create() and
+// verify(): create → modal → verify → success. See lib/razorpay.ts for the
+// hosted-modal loader.
+export type RazorpayOrderResponse = {
+  rzpOrderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+  customer: { name: string; email: string; phone: string };
+};
+
+export const paymentApi = {
+  createOrder: (ourOrderId: string) =>
+    api<RazorpayOrderResponse>(`/api/customer-auth/payment/order`, {
+      method: 'POST',
+      body: JSON.stringify({ orderId: ourOrderId }),
+    }),
+  verify: (payload: {
+    orderId: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) =>
+    api<CustomerOrder>(`/api/customer-auth/payment/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  cancel: (ourOrderId: string) =>
+    api<{ ok: true }>(`/api/customer-auth/payment/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ orderId: ourOrderId }),
+    }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────

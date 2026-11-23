@@ -20,12 +20,18 @@ export default function AccountDetailsPage() {
     if (!user) return;
     setName(user.name);
     setEmail(user.email);
+    setPhone(user.mobile ?? '');
   }, [user]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    signIn({ name: name.trim() || user.name, email: email.trim() || user.email });
+    signIn({
+      ...user,
+      name: name.trim() || user.name,
+      email: email.trim() || user.email,
+      mobile: phone.trim() || user.mobile,
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 2200);
   };

@@ -29,7 +29,31 @@ export default function LegalShell({
           title, gold hairline, and last-updated chip. Mirrors the
           Kalki-style redesign of <PolicyHeader>. */}
       <header className="border-b border-ink/10 bg-bone">
-        <div className="max-w-[1100px] mx-auto px-6 lg:px-10 pt-16 pb-12 md:pt-20 md:pb-14 text-center">
+        <div className="relative max-w-[1100px] mx-auto px-6 lg:px-10 pt-16 pb-12 md:pt-20 md:pb-14 text-center">
+          {/* Back-to-Home anchor — absolutely positioned to the top-left so
+              it doesn't disturb the centred title/breadcrumb. On mobile
+              it drops to the left edge of the viewport padding too. */}
+          <Link
+            href="/"
+            className="absolute top-6 md:top-8 left-6 lg:left-10 inline-flex items-center gap-1.5 text-[0.65rem] md:text-[0.72rem] font-bold uppercase tracking-[0.2em] text-ink/70 hover:text-maroon-deep transition-colors"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M19 12H5" />
+              <path d="m12 19-7-7 7-7" />
+            </svg>
+            <span className="hidden sm:inline">Back to Home</span>
+            <span className="sm:hidden">Back</span>
+          </Link>
           <nav
             aria-label="Breadcrumb"
             className="text-[0.65rem] md:text-[0.72rem] tracking-[0.35em] uppercase font-bold text-maroon"
@@ -110,6 +134,31 @@ export default function LegalShell({
                 +91 98765 43210
               </a>{' '}
               (Monday – Saturday · 10:00 AM – 9:00 PM · Sunday · 11:00 AM – 8:00 PM (IST)).
+            </div>
+
+            {/* Bottom back-to-home button — primary CTA for shoppers who
+                scrolled the full policy. Saves a trip back to the top. */}
+            <div className="mt-8">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 bg-ink text-ivory px-6 py-3 text-xs font-bold uppercase tracking-[0.18em] hover:bg-maroon-deep transition-colors"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M19 12H5" />
+                  <path d="m12 19-7-7 7-7" />
+                </svg>
+                Back to Home
+              </Link>
             </div>
           </article>
         </div>

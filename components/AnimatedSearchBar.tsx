@@ -57,13 +57,19 @@ const HOLD_MS = 1400;
 export default function AnimatedSearchBar({
   autoFocus = false,
   variant = 'drawer',
+  onValueChange,
 }: {
   autoFocus?: boolean;
   variant?: 'drawer' | 'inline';
+  /** Fires on every keystroke so the parent (Nav) can live-filter the
+   *  "Recommended For You" grid as the shopper types. Optional — the
+   *  inline variant on other pages doesn't need to publish its value. */
+  onValueChange?: (value: string) => void;
 } = {}) {
   const isInline = variant === 'inline';
   const router = useRouter();
   const [value, setValue] = useState('');
+  useEffect(() => { onValueChange?.(value); }, [value, onValueChange]);
   const [placeholder, setPlaceholder] = useState('');
   const phraseRef = useRef(0);
   const charRef = useRef(0);

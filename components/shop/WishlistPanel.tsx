@@ -116,6 +116,7 @@ export default function WishlistPanel({
                   hideDiscountOverlay
                   showBadgesBelowPrice
                   showViewSimilar
+                  compact
                 />
               ))}
             </div>

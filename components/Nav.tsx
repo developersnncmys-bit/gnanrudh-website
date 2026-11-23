@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
   LuSearch,
@@ -227,7 +227,29 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
   // while the fetch is in flight.
   const { sarees: liveSarees } = useLiveSarees();
   const bestSellers = liveSarees.filter((s) => s.badges.includes('bestseller')).slice(0, 4);
-  const recommended = bestSellers.length ? bestSellers : SAREES.slice(0, 4);
+  // `searchQuery` mirrors what the shopper has typed in the search bar.
+  // Lifted out of AnimatedSearchBar via its onValueChange prop so we can
+  // live-filter the "Recommended For You" grid as they type. Empty string
+  // falls back to the bestseller list — the default landing view.
+  const [searchQuery, setSearchQuery] = useState('');
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const recommended = useMemo(() => {
+    if (!trimmedQuery) {
+      return bestSellers.length ? bestSellers : SAREES.slice(0, 4);
+    }
+    // Match across name, weave, region (category id) and badges. The pool
+    // is liveSarees when the backend has them; otherwise fall back to the
+    // shipped SAREES seed so results still appear in a fresh DB. Cast to
+    // the live type so the filter callback gets a known Saree param — the
+    // two arrays are structurally identical for the fields we read here.
+    const pool: typeof liveSarees = liveSarees.length ? liveSarees : (SAREES as typeof liveSarees);
+    return pool
+      .filter((s) => {
+        const hay = `${s.name} ${s.weave} ${s.region || ''}`.toLowerCase();
+        return hay.includes(trimmedQuery);
+      })
+      .slice(0, 8);
+  }, [trimmedQuery, bestSellers, liveSarees]);
   // Search panel "Popular Choices" — wired to the admin's saree-flagged
   // categories (same list that drives the mega-menu). Falls back to the
   // shipped static picks so the rail is never blank on a fresh DB or
@@ -836,7 +858,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
         >
           <div className="flex items-center gap-4 px-5 sm:px-8 py-5 border-b border-ink/10">
             <div className="flex-1 min-w-0">
-              <AnimatedSearchBar autoFocus={searchOpen} />
+              <AnimatedSearchBar autoFocus={searchOpen} onValueChange={setSearchQuery} />
             </div>
             <button
               type="button"
@@ -890,8 +912,13 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
                   tiles stay in a browse-sized ~220-280px range. */}
               <section className="flex-1 min-w-0 flex flex-col min-h-0">
                 <h3 className="text-xs font-bold tracking-[0.18em] uppercase text-ink mb-4">
-                  Recommended For You
+                  {trimmedQuery ? `Results for “${searchQuery.trim()}”` : 'Recommended For You'}
                 </h3>
+                {trimmedQuery && recommended.length === 0 && (
+                  <p className="text-sm text-ink/60 mb-4">
+                    No matches — try a weave (Banarasi, Kanjeevaram) or press Enter to search the shop.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto overscroll-contain pr-2 search-rail-scroll flex-1 min-h-0">
                   {recommended.map((s) => {
                     const resolved = navHref(`/shop/${s.id}`);

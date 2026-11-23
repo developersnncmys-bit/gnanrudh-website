@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAddresses, type Address, type AddressInput } from '@/lib/addresses';
 import { useScrollLock } from '@/lib/scroll-lock';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 const EMPTY: AddressInput = {
   fullName: '',
@@ -97,6 +98,9 @@ export default function AddressModal() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState<PinStatus>({ kind: 'idle' });
+  // Address id pending delete confirmation. When non-null, ConfirmDialog
+  // renders over the AddressModal; confirming calls removeAddress.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
 
   // Reset to the right view each time the modal opens. If there are no
@@ -361,7 +365,7 @@ export default function AddressModal() {
                               type="button"
                               onClick={(e) => {
                                 e.preventDefault();
-                                removeAddress(a.id);
+                                setPendingDeleteId(a.id);
                               }}
                               className="text-[11px] font-semibold text-ink/70 hover:text-maroon underline underline-offset-2"
                             >
@@ -545,6 +549,25 @@ export default function AddressModal() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Remove address?"
+        message={(() => {
+          const a = addresses.find((x) => x.id === pendingDeleteId);
+          return a
+            ? `“${a.fullName}, ${a.line1}” will be removed from your saved addresses. This cannot be undone.`
+            : 'This address will be removed from your saved addresses. This cannot be undone.';
+        })()}
+        confirmLabel="Remove"
+        cancelLabel="Keep"
+        danger
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId) removeAddress(pendingDeleteId);
+          setPendingDeleteId(null);
+        }}
+      />
     </div>
   );
 }

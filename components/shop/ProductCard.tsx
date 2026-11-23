@@ -33,9 +33,14 @@ export default function ProductCard({
   hideDiscountOverlay = false,
   showBadgesBelowPrice = false,
   showViewSimilar = false,
+  compact = false,
 }: {
   saree: Saree;
   priority?: boolean;
+  // Shorter image aspect (3:4 instead of 2:3). Used by the wishlist
+  // grid to keep cards at their normal width but with less vertical
+  // real estate per tile.
+  compact?: boolean;
   // Opt-out for the on-image availability chips (Ready to Ship / Selling
   // Fast / Last Chance). Only turned on by NewArrivalsView so other
   // shop surfaces keep showing the badges unchanged.
@@ -67,7 +72,7 @@ export default function ProductCard({
 
   return (
     <Link href={`/shop/${saree.id}`} className="group block bg-white">
-      <div className="relative aspect-[2/3] overflow-hidden bg-gray-100">
+      <div className={`relative ${compact ? 'aspect-square' : 'aspect-[2/3]'} overflow-hidden bg-gray-100`}>
         <Image
           src={getProductHero(saree)}
           alt={saree.name}

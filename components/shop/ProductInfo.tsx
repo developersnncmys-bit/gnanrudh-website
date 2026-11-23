@@ -39,10 +39,16 @@ export default function ProductInfo({
   // Express-checkout: drop the saree into the cart (if not already there)
   // and open the checkout popup. Gated — opens the login modal first if
   // the user isn't signed in, then resumes via the post-login callback.
+  // Quantity picker state. Clamped between 1 and the selected variant's live
+  // stock when a colour is picked; falls back to a conservative 10-piece
+  // ceiling when no colour is picked yet so the shopper can still nudge the
+  // number up without risking an over-order (if they later pick a variant
+  // with less stock, we re-clamp on next render).
+  const [quantity, setQuantity] = useState(1);
   const handleBuyItNow = () => {
     if (!authHydrated) return;
     const proceed = () => {
-      if (!inCart(saree.id)) addToCart(saree.id, 1);
+      if (!inCart(saree.id)) addToCart(saree.id, quantity);
       openCheckout();
     };
     if (!user) {
@@ -347,6 +353,66 @@ export default function ProductInfo({
         </div>
       )}
 
+      {/* Quantity selector — compact −/+/number row that sits above the
+          CTAs. Max is the selected variant's live stock when a colour has
+          been picked, or a 10-piece ceiling otherwise. The input itself
+          accepts typed digits but is clamped on blur so a 5-digit paste
+          doesn't slip through. Hidden when the selected variant is out of
+          stock because the CTAs collapse to "Out of Stock" anyway. */}
+      {!isSelectedOutOfStock && (() => {
+        const maxQty = Math.max(1, selectedVariant?.stock ?? 10);
+        const clamped = Math.max(1, Math.min(maxQty, quantity));
+        const dec = () => setQuantity(Math.max(1, clamped - 1));
+        const inc = () => setQuantity(Math.min(maxQty, clamped + 1));
+        return (
+          <div className="mt-5 max-w-[420px]">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-gray-700">
+                Quantity
+              </span>
+              <div className="flex items-stretch border border-gray-300">
+                <button
+                  type="button"
+                  onClick={dec}
+                  disabled={clamped <= 1}
+                  aria-label="Decrease quantity"
+                  className="w-10 h-10 flex items-center justify-center text-ink hover:bg-gray-100 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                >
+                  −
+                </button>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={clamped}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value.replace(/\D/g, ''), 10);
+                    if (Number.isFinite(n) && n > 0) setQuantity(Math.min(maxQty, n));
+                    else if (e.target.value === '') setQuantity(1);
+                  }}
+                  onBlur={() => setQuantity(clamped)}
+                  aria-label="Quantity"
+                  className="w-12 text-center border-x border-gray-300 text-sm font-semibold text-ink tabular-nums focus:outline-none bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={inc}
+                  disabled={clamped >= maxQty}
+                  aria-label="Increase quantity"
+                  className="w-10 h-10 flex items-center justify-center text-ink hover:bg-gray-100 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            {selectedVariant && (selectedVariant.stock ?? 0) > 0 && (selectedVariant.stock ?? 0) <= 5 && (
+              <p className="mt-2 text-[0.7rem] text-maroon font-medium">
+                Only {selectedVariant.stock} left in this colour.
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       {/* CTAs — Kalki PDP uses chunky full-width buttons that read as
           the page's primary actions. When the selected colour is out of
           stock, both buttons collapse to a disabled "Out of Stock" chip
@@ -365,12 +431,12 @@ export default function ProductInfo({
           <>
             <button
               type="button"
-              onClick={() => addToCart(saree.id, 1)}
+              onClick={() => addToCart(saree.id, quantity)}
               className="w-full border border-gray-900 text-gray-900 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-gray-900 hover:text-white transition-colors flex items-center justify-center gap-2.5"
             >
               <span>Add to Cart</span>
               <span className="w-1 h-1 rounded-full bg-current" />
-              <span className="tabular-nums">{formatINR(total)}</span>
+              <span className="tabular-nums">{formatINR(total * quantity)}</span>
             </button>
             <button
               type="button"
