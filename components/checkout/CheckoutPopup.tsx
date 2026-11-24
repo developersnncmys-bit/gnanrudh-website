@@ -19,25 +19,16 @@ import { useLoginModal } from '@/lib/login-modal';
 import { useAuth } from '@/lib/auth';
 import { useScrollLock } from '@/lib/scroll-lock';
 import { useOrders, type OrderItem as OrderItemRecord } from '@/lib/orders';
-import { ordersApi, paymentApi } from '@/lib/api';
+import { couponsApi, ordersApi, paymentApi, type ServerPublicCoupon } from '@/lib/api';
 import { openRazorpay } from '@/lib/razorpay';
 import { useRouter } from 'next/navigation';
 
 type ShipMethod = 'standard' | 'express';
 type PayMethod = 'upi' | 'card' | 'netbanking' | 'cod';
 
-const STANDARD_THRESHOLD = 25_000;
 const EXPRESS_FEE = 500;
 const COD_FEE = 100;
 const GST_RATE = 0.05;
-const PROMO_CODES: Record<string, number> = {
-  WELCOME10: 0.1,
-  HEIRLOOM15: 0.15,
-};
-
-// Drawer width on desktop so we can offset the popup to sit beside it
-// rather than on top of it.
-const DRAWER_WIDTH_PX = 440;
 
 export default function CheckoutPopup() {
   const router = useRouter();
@@ -63,6 +54,9 @@ export default function CheckoutPopup() {
   const [promoInput, setPromoInput] = useState('');
   const [promoCode, setPromoCode] = useState<string | null>(null);
   const [promoError, setPromoError] = useState('');
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoApplying, setPromoApplying] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState<ServerPublicCoupon[]>([]);
   const [placing, setPlacing] = useState(false);
 
   useScrollLock(open);
@@ -82,9 +76,53 @@ export default function CheckoutPopup() {
       setSummaryOpen(false);
       setPromoInput('');
       setPromoError('');
+      setPromoCode(null);
+      setPromoDiscount(0);
       setPlacing(false);
     }
   }, [open]);
+
+  // Load the admin-maintained coupon strip on open. Guarded by `open` so
+  // the fetch doesn't fire on every mount of the popup wrapper, and the
+  // response is only committed when still open to avoid setting state on
+  // an unmounted dialog.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    couponsApi.list()
+      .then((r) => { if (!cancelled) setAvailableCoupons(r.items || []); })
+      .catch((err) => { console.warn('[checkout] couponsApi.list failed', err); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // Re-validate the applied coupon whenever cart lines change — a user who
+  // removed an eligible item or dropped below the min-order should see the
+  // discount go to zero with an explanation, not keep a stale number.
+  const cartSignature = items
+    .map((i) => `${i.saree.id}:${i.qty}:${i.saree.price}`)
+    .join('|');
+  useEffect(() => {
+    if (!promoCode || !items.length) return;
+    let cancelled = false;
+    const payload = {
+      items: items.map((i) => ({ pid: i.saree.id, qty: i.qty, price: i.saree.price })),
+    };
+    couponsApi.validate(promoCode, payload)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.ok && typeof r.discount === 'number') {
+          setPromoDiscount(r.discount);
+          setPromoError('');
+        } else {
+          setPromoCode(null);
+          setPromoDiscount(0);
+          setPromoError(r.reason || 'Coupon no longer applies to this cart');
+        }
+      })
+      .catch(() => { /* keep last-known good — order creation will revalidate */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartSignature, promoCode]);
 
   // Auto-select a saved address when the checkout opens. Covers two
   // cases: (a) the local address book was already populated but had no
@@ -104,21 +142,77 @@ export default function CheckoutPopup() {
   // ── Totals ────────────────────────────────────────────────────────────
   const shippingFee = shipMethod === 'express' ? EXPRESS_FEE : 0;
   const codFee = payMethod === 'cod' ? COD_FEE : 0;
-  const discount = promoCode ? Math.round(cartSubtotal * (PROMO_CODES[promoCode] ?? 0)) : 0;
+  // CPN-03: discount is whatever the server's /coupons/:code/validate
+  // returned for the current cart. Never computed from a client-side
+  // promo map — those drift from what the admin publishes. Clamped so a
+  // stale response can't drop the paying total below zero.
+  const discount = promoCode ? Math.min(cartSubtotal, Math.max(0, promoDiscount)) : 0;
   const taxable = Math.max(cartSubtotal - discount, 0) + shippingFee + codFee;
-  const tax = Math.round(taxable * GST_RATE);
-  const total = taxable + tax;
+  // Per-line GST using each product's admin-set rate (Product drawer →
+  // GST panel → HSN + override). Items without an explicit rate fall
+  // back to the storefront default (GST_RATE). Any coupon discount is
+  // apportioned across lines pro-rata by line value so the net amount
+  // being taxed still equals (subtotal − discount). Shipping + COD fees
+  // are taxed at the default rate. Mirrors the CartDrawer math so the
+  // cart "Estimated total" and the checkout "To pay" agree to the rupee.
+  const discountRatio = cartSubtotal > 0 ? discount / cartSubtotal : 0;
+  const itemsGst = items.reduce((sum, { saree, qty }) => {
+    const rate =
+      typeof saree.gst === 'number' && Number.isFinite(saree.gst)
+        ? saree.gst / 100
+        : GST_RATE;
+    const netLineTotal = saree.price * qty * (1 - discountRatio);
+    return sum + netLineTotal * rate;
+  }, 0);
+  const feesGst = (shippingFee + codFee) * GST_RATE;
+  const tax = Math.round(itemsGst + feesGst);
+  const total = Math.max(cartSubtotal - discount, 0) + shippingFee + codFee + tax;
   const mrpTotal = cartSubtotal;
+  // Label collapses to "GST (N%)" when every item in the basket uses the
+  // same rate; otherwise it's plain "GST" with the itemised breakdown
+  // living on the tax invoice.
+  const gstRateSet = new Set(
+    items.map(({ saree }) =>
+      typeof saree.gst === 'number' && Number.isFinite(saree.gst)
+        ? saree.gst
+        : GST_RATE * 100,
+    ),
+  );
+  const gstLabel = gstRateSet.size === 1 ? `GST (${[...gstRateSet][0]}%)` : 'GST';
 
-  const applyPromo = () => {
-    const code = promoInput.trim().toUpperCase();
-    if (!code) return;
-    if (!(code in PROMO_CODES)) {
-      setPromoError('That code is not valid');
-      setPromoCode(null);
+  const applyCoupon = async (rawCode: string) => {
+    const code = rawCode.trim().toUpperCase();
+    if (!code || promoApplying) return;
+    if (!items.length) {
+      setPromoError('Add a saree before applying a coupon');
       return;
     }
-    setPromoCode(code);
+    setPromoApplying(true);
+    setPromoError('');
+    try {
+      const r = await couponsApi.validate(code, {
+        items: items.map((i) => ({ pid: i.saree.id, qty: i.qty, price: i.saree.price })),
+      });
+      if (r.ok && typeof r.discount === 'number') {
+        setPromoCode(code);
+        setPromoDiscount(r.discount);
+        setPromoError('');
+        setPromoInput('');
+      } else {
+        setPromoCode(null);
+        setPromoDiscount(0);
+        setPromoError(r.reason || 'That code is not valid');
+      }
+    } catch (err) {
+      setPromoError((err as Error).message || 'Could not apply coupon');
+    } finally {
+      setPromoApplying(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setPromoCode(null);
+    setPromoDiscount(0);
     setPromoError('');
   };
 
@@ -449,7 +543,7 @@ export default function CheckoutPopup() {
                   value={shippingFee === 0 ? 'Free' : formatINR(shippingFee)}
                 />
                 {codFee > 0 && <SummaryRow label="COD handling" value={formatINR(codFee)} />}
-                <SummaryRow label="GST (5%)" value={formatINR(tax)} muted />
+                <SummaryRow label={gstLabel} value={formatINR(tax)} muted />
                 <div className="h-px bg-ink/10 my-2" />
                 <SummaryRow label="To pay" value={formatINR(total)} strong />
               </div>
@@ -533,6 +627,122 @@ export default function CheckoutPopup() {
                   </svg>
                   Select delivery address
                 </button>
+              )}
+            </div>
+
+            {/* COUPONS — active codes from the admin. The input lets a
+                shopper type a hidden code (influencer / loyalty) that may
+                not be in the public list. Clicking a card auto-fills +
+                applies. All validation is server-side. */}
+            <SectionEyebrow>Coupons &amp; offers</SectionEyebrow>
+            <div className="px-5 pb-4">
+              {promoCode ? (
+                <div className="border border-emerald-700/40 bg-emerald-50/50 p-3 flex items-start gap-3 mb-3">
+                  <span className="shrink-0 mt-0.5 text-emerald-700">
+                    <TagIcon />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-ink">
+                      {promoCode} applied
+                    </div>
+                    <div className="text-[11px] text-ink/70 mt-0.5 tabular-nums">
+                      You save {formatINR(discount)} on this order
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={removeCoupon}
+                    className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-ink/60 hover:text-maroon-deep underline-offset-2 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-stretch gap-2 mb-2">
+                  <input
+                    type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    value={promoInput}
+                    onChange={(e) => {
+                      setPromoInput(e.target.value.toUpperCase());
+                      if (promoError) setPromoError('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyCoupon(promoInput);
+                      }
+                    }}
+                    placeholder="Enter coupon code"
+                    className="flex-1 min-w-0 border border-ink/20 bg-white px-3 py-2.5 text-xs font-semibold text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink tracking-wider"
+                    aria-label="Coupon code"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => applyCoupon(promoInput)}
+                    disabled={promoApplying || !promoInput.trim()}
+                    className="shrink-0 bg-ink text-white px-4 text-[11px] font-bold tracking-wider uppercase hover:bg-maroon-deep transition-colors disabled:bg-ink/30 disabled:cursor-not-allowed"
+                  >
+                    {promoApplying ? '…' : 'Apply'}
+                  </button>
+                </div>
+              )}
+              {promoError && !promoCode && (
+                <p className="text-[11px] text-maroon mb-2">{promoError}</p>
+              )}
+              {availableCoupons.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink/55 mb-2">
+                    Available offers
+                  </div>
+                  <ul className="space-y-2">
+                    {availableCoupons.map((c) => {
+                      const active = promoCode === c.code;
+                      const belowMin = c.min > 0 && cartSubtotal < c.min;
+                      const label = c.kind === 'Percent'
+                        ? `${c.value}% off${c.scope && c.scope !== 'All products' ? ` on ${c.scope}` : ''}`
+                        : `Flat ${formatINR(c.value)} off${c.scope && c.scope !== 'All products' ? ` on ${c.scope}` : ''}`;
+                      return (
+                        <li
+                          key={c.code}
+                          className={`border p-3 flex items-start gap-3 bg-white ${
+                            active ? 'border-emerald-700/50' : 'border-ink/15'
+                          }`}
+                        >
+                          <span className="shrink-0 mt-0.5 text-maroon-deep">
+                            <TagIcon />
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-ink tracking-wider">{c.code}</span>
+                              <span className="text-[11px] text-ink/70">{label}</span>
+                            </div>
+                            <div className="text-[10px] text-ink/55 mt-0.5">
+                              {c.min > 0 && <>Min order {formatINR(c.min)}. </>}
+                              {c.ends && <>Ends {new Date(c.ends).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.</>}
+                            </div>
+                          </div>
+                          {active ? (
+                            <span className="shrink-0 text-[11px] font-bold tracking-wider uppercase text-emerald-700">
+                              Applied
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => applyCoupon(c.code)}
+                              disabled={promoApplying || belowMin}
+                              className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-maroon-deep hover:text-ink disabled:text-ink/30 disabled:cursor-not-allowed"
+                            >
+                              {belowMin ? `Add ${formatINR(c.min - cartSubtotal)}` : 'Apply'}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               )}
             </div>
 

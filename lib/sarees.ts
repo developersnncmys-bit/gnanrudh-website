@@ -97,6 +97,11 @@ export type Saree = {
   // Admin-uploaded drape video URL. Empty = no video thumbnail renders on
   // the PDP gallery; present = rendered as the last thumbnail.
   videoUrl?: string;
+  // Admin-set per-product GST rate (% number — e.g. 5 for 5%). Comes from
+  // the product drawer's GST panel and is driven by the HSN code mapping
+  // with an optional manual override. Undefined when the admin has never
+  // touched it — the cart falls back to the storefront default (5 %).
+  gst?: number;
 };
 
 export const TIERS: Record<

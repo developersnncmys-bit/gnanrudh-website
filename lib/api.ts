@@ -244,6 +244,40 @@ export const settingsApi = {
   get: () => api<{ store: any; ship: any; policy: any }>(`/api/public/settings`, { auth: false }),
 };
 
+// CPN-03: public coupon surface — list for the "available coupons" strip
+// at checkout, and validate() for the "Apply" button. Validation hits the
+// same business-logic helper the admin uses, so a coupon that applies in
+// one place applies in the other. Order creation re-validates server-side
+// too; the discount returned here is informational, not load-bearing.
+export type ServerPublicCoupon = {
+  code: string;
+  kind: 'Percent' | 'Flat';
+  value: number;
+  min: number;
+  scope: string | null;
+  ends: string | null;
+};
+
+export type ServerCouponValidation = {
+  ok: boolean;
+  discount?: number;
+  eligibleSub?: number;
+  reason?: string;
+};
+
+export const couponsApi = {
+  list: () => api<ServerListResponse<ServerPublicCoupon>>(`/api/public/coupons`, { auth: false }),
+  validate: (
+    code: string,
+    payload: { items: Array<{ pid: string; qty: number; price: number }>; cid?: string },
+  ) =>
+    api<ServerCouponValidation>(`/api/public/coupons/${encodeURIComponent(code)}/validate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      auth: false,
+    }),
+};
+
 // Customer auth
 export type Customer = {
   id: string;

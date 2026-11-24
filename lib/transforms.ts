@@ -117,6 +117,10 @@ export function mapProductToSaree(p: ServerProduct): Saree {
     fitTip: typeof p.fitTip === 'string' ? p.fitTip.trim() : '',
     shippingNote: typeof p.shippingNote === 'string' ? p.shippingNote.trim() : '',
     videoUrl: typeof p.videoUrl === 'string' ? p.videoUrl.trim() : '',
+    // Per-product GST rate (percent). Only forwarded when the admin has
+    // actually set a numeric value — anything else leaves it undefined so
+    // the cart falls back to the storefront-wide default rate.
+    gst: typeof p.gst === 'number' && Number.isFinite(p.gst) ? p.gst : undefined,
   };
 }
 

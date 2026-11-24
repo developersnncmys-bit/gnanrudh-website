@@ -44,6 +44,33 @@ export default function CartDrawer() {
   const mrpTotal = items.reduce((sum, i) => sum + i.saree.mrp * i.qty, 0);
   const discount = mrpTotal - cartSubtotal;
   const shippingFree = cartSubtotal >= 25_000;
+  // GST is applied on top of each line using the admin's per-product
+  // rate (from the Product drawer → GST panel → HSN + override). Lines
+  // without a set rate fall back to the storefront default of 5 %.
+  // Rounding happens on the sum so a basket with mixed rates doesn't
+  // accumulate rupee-level rounding error line by line.
+  const DEFAULT_GST_RATE = 0.05;
+  const rawGst = items.reduce((sum, { saree, qty }) => {
+    const rate =
+      typeof saree.gst === 'number' && Number.isFinite(saree.gst)
+        ? saree.gst / 100
+        : DEFAULT_GST_RATE;
+    return sum + saree.price * qty * rate;
+  }, 0);
+  const gst = Math.round(rawGst);
+  const estimatedTotal = cartSubtotal + gst;
+  // Chip label for the UI. When every line in the cart uses the same
+  // rate we can show "GST (2%)" exactly; otherwise show the aggregate
+  // "GST" without a specific rate (basket has mixed HSNs — the itemized
+  // breakdown lives on the invoice).
+  const rateSet = new Set(
+    items.map(({ saree }) =>
+      typeof saree.gst === 'number' && Number.isFinite(saree.gst)
+        ? saree.gst
+        : DEFAULT_GST_RATE * 100,
+    ),
+  );
+  const gstLabel = rateSet.size === 1 ? `GST (${[...rateSet][0]}%)` : 'GST';
 
   // Don't close the drawer when launching checkout — Kalki keeps the cart
   // visible on the right while the centered popup opens beside it.
@@ -204,11 +231,12 @@ export default function CartDrawer() {
                       value={shippingFree ? 'Free' : 'At checkout'}
                       valueClass={shippingFree ? 'text-emerald-600 font-bold' : ''}
                     />
+                    <SummaryRow label={gstLabel} value={formatINR(gst)} />
                   </div>
                   <div className="px-5 py-3.5 bg-[#faf1ea] flex items-baseline justify-between">
                     <span className="text-[0.95rem] font-bold text-ink">Estimated total</span>
                     <span className="text-[0.95rem] font-bold text-ink tabular-nums">
-                      {formatINR(cartSubtotal)}
+                      {formatINR(estimatedTotal)}
                     </span>
                   </div>
                 </div>
@@ -243,7 +271,7 @@ export default function CartDrawer() {
               <div className="flex items-baseline justify-between mb-3">
                 <span className="text-sm font-bold text-ink">Estimated total</span>
                 <span className="text-lg font-bold text-ink tabular-nums">
-                  {formatINR(cartSubtotal)}
+                  {formatINR(estimatedTotal)}
                 </span>
               </div>
               <button
