@@ -155,7 +155,6 @@ type DetailSection = {
 };
 
 function ProductDetailsTable({ saree }: { saree: Saree }) {
-  const swatchHex = saree.palette[0];
   // Build rows strictly from admin-authored data. No derivations, no
   // seed fallbacks — empty values drop the row, sections with no rows
   // are hidden entirely so the PDP never shows invented copy.
@@ -171,7 +170,6 @@ function ProductDetailsTable({ saree }: { saree: Saree }) {
       rows: [
         row('Style No', saree.details.styleNo),
         row('Design No', saree.details.designNo),
-        row('Color', saree.details.colourLabel, swatchHex),
         // Category auto-derived from the product's category pick in the
         // admin (same source as Work). One admin field, two PDP labels.
         row('Category', saree.weave),
