@@ -80,55 +80,77 @@ export default function BagPanel({
         ) : (
           <div className="flex flex-col lg:flex-row gap-8">
             <ul className="flex-1 border border-ink/10 divide-y divide-ink/10 bg-ivory">
-              {items.map(({ saree, qty }) => (
-                <li key={saree.id} className="flex gap-4 lg:gap-6 p-4 lg:p-6">
-                  <Link
-                    href={`/shop/${saree.id}`}
-                    className="relative w-24 h-32 lg:w-28 lg:h-36 shrink-0 overflow-hidden bg-bone"
-                  >
-                    <Image
-                      src={getProductHero(saree)}
-                      alt={saree.name}
-                      fill
-                      sizes="140px"
-                      className="object-cover"
-                    />
-                  </Link>
-                  <div className="flex-1 min-w-0 flex flex-col">
-                    <div className="text-xs text-ink/55 mb-1 font-medium">
-                      {saree.weave}
-                    </div>
+              {items.map(({ saree, variant, qty, cap }) => {
+                const vid = variant?.id ?? null;
+                const atCap = cap != null && qty >= cap;
+                return (
+                  <li key={`${saree.id}::${vid ?? ''}`} className="flex gap-4 lg:gap-6 p-4 lg:p-6">
                     <Link
                       href={`/shop/${saree.id}`}
-                      className="text-sm md:text-base font-semibold text-ink hover:text-maroon transition-colors leading-snug mb-1"
+                      className="relative w-24 h-32 lg:w-28 lg:h-36 shrink-0 overflow-hidden bg-bone"
                     >
-                      {saree.name}
-                    </Link>
-                    <div className="text-xs text-ink/55 mb-3">{saree.region}</div>
-
-                    <div className="flex items-end justify-between gap-3 mt-auto flex-wrap">
-                      <QtyStepper
-                        qty={qty}
-                        onMinus={() => updateCartQty(saree.id, qty - 1)}
-                        onPlus={() => updateCartQty(saree.id, qty + 1)}
+                      <Image
+                        src={getProductHero(saree)}
+                        alt={saree.name}
+                        fill
+                        sizes="140px"
+                        className="object-cover"
                       />
-                      <div className="flex items-baseline gap-4">
-                        <span className="text-base font-bold text-ink tabular-nums">
-                          {formatINR(saree.price * qty)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeFromCart(saree.id)}
-                          aria-label={`Remove ${saree.name}`}
-                          className="text-xs font-medium text-ink/55 hover:text-maroon underline underline-offset-2"
-                        >
-                          Remove
-                        </button>
+                    </Link>
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="text-xs text-ink/55 mb-1 font-medium">
+                        {saree.weave}
+                      </div>
+                      <Link
+                        href={`/shop/${saree.id}`}
+                        className="text-sm md:text-base font-semibold text-ink hover:text-maroon transition-colors leading-snug mb-1"
+                      >
+                        {saree.name}
+                      </Link>
+                      <div className="text-xs text-ink/55 mb-1">{saree.region}</div>
+                      {variant && (
+                        <div className="mb-3 flex items-center gap-1.5 text-xs text-ink/75">
+                          <span
+                            aria-hidden
+                            className="inline-block w-3 h-3 rounded-full ring-1 ring-black/15"
+                            style={{ background: variant.hex }}
+                          />
+                          <span>Colour: <span className="font-semibold text-ink">{variant.colour}</span></span>
+                        </div>
+                      )}
+
+                      <div className="flex items-end justify-between gap-3 mt-auto flex-wrap">
+                        <div className="flex flex-col gap-1">
+                          <QtyStepper
+                            qty={qty}
+                            onMinus={() => updateCartQty(saree.id, qty - 1, vid)}
+                            onPlus={() => updateCartQty(saree.id, qty + 1, vid)}
+                            plusDisabled={atCap}
+                          />
+                          {cap != null && cap > 0 && cap <= 5 && (
+                            <span className="text-[0.7rem] text-maroon font-medium">
+                              {atCap ? `Only ${cap} in stock — all added` : `Only ${cap} left in stock`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-baseline gap-4">
+                          <span className="text-base font-bold text-ink tabular-nums">
+                            {formatINR(saree.price * qty)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(saree.id, vid)}
+                            aria-label={`Remove ${saree.name}`}
+                            className="text-xs font-medium text-ink/55 hover:text-maroon underline underline-offset-2"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
 
             <aside className="w-full lg:w-[340px] shrink-0">
@@ -223,18 +245,21 @@ function QtyStepper({
   qty,
   onMinus,
   onPlus,
+  plusDisabled = false,
 }: {
   qty: number;
   onMinus: () => void;
   onPlus: () => void;
+  plusDisabled?: boolean;
 }) {
   return (
     <div className="inline-flex items-center border border-ink/20">
       <button
         type="button"
         onClick={onMinus}
+        disabled={qty <= 1}
         aria-label="Decrease quantity"
-        className="w-8 h-8 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-base"
+        className="w-8 h-8 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-base disabled:text-ink/25 disabled:hover:bg-transparent disabled:hover:text-ink/25 disabled:cursor-not-allowed"
       >
         −
       </button>
@@ -242,8 +267,9 @@ function QtyStepper({
       <button
         type="button"
         onClick={onPlus}
+        disabled={plusDisabled}
         aria-label="Increase quantity"
-        className="w-8 h-8 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-base"
+        className="w-8 h-8 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-base disabled:text-ink/25 disabled:hover:bg-transparent disabled:hover:text-ink/25 disabled:cursor-not-allowed"
       >
         +
       </button>

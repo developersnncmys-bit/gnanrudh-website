@@ -151,61 +151,83 @@ export default function CartDrawer() {
           ) : (
             <>
               <ul className="divide-y divide-ink/10">
-                {items.map(({ saree, qty }) => (
-                  <li key={saree.id} className="flex gap-4 p-5 bg-white">
-                    <Link
-                      href={`/shop/${saree.id}`}
-                      onClick={closeCart}
-                      className="relative w-24 shrink-0 overflow-hidden bg-bone"
-                      style={{ aspectRatio: '3 / 4' }}
-                    >
-                      <Image
-                        src={getProductHero(saree)}
-                        alt={saree.name}
-                        fill
-                        sizes="96px"
-                        className="object-cover"
-                      />
-                    </Link>
-                    <div className="flex-1 min-w-0 flex flex-col">
-                      <div className="flex items-start justify-between gap-2">
-                        <Link
-                          href={`/shop/${saree.id}`}
-                          onClick={closeCart}
-                          className="text-[0.95rem] font-semibold text-ink leading-tight hover:text-maroon-deep transition-colors line-clamp-2 flex-1"
-                        >
-                          {saree.name}
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => removeFromCart(saree.id)}
-                          aria-label={`Remove ${saree.name}`}
-                          className="shrink-0 w-7 h-7 flex items-center justify-center text-ink/55 hover:text-maroon-deep transition-colors"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                            <path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="mt-1 text-sm font-bold text-ink tabular-nums">
-                        MRP {formatINR(saree.price)}
-                      </div>
-                      <div className="mt-1 text-[0.72rem] text-ink/60">
-                        {saree.weave}
-                      </div>
-                      <div className="mt-auto pt-3 flex items-center justify-between gap-2">
-                        <QtyStepper
-                          qty={qty}
-                          onMinus={() => updateCartQty(saree.id, qty - 1)}
-                          onPlus={() => updateCartQty(saree.id, qty + 1)}
+                {items.map(({ saree, variant, qty, cap }) => {
+                  const vid = variant?.id ?? null;
+                  const atCap = cap != null && qty >= cap;
+                  return (
+                    <li key={`${saree.id}::${vid ?? ''}`} className="flex gap-4 p-5 bg-white">
+                      <Link
+                        href={`/shop/${saree.id}`}
+                        onClick={closeCart}
+                        className="relative w-24 shrink-0 overflow-hidden bg-bone"
+                        style={{ aspectRatio: '3 / 4' }}
+                      >
+                        <Image
+                          src={getProductHero(saree)}
+                          alt={saree.name}
+                          fill
+                          sizes="96px"
+                          className="object-cover"
                         />
-                        <div className="text-sm font-bold text-ink tabular-nums">
-                          {formatINR(saree.price * qty)}
+                      </Link>
+                      <div className="flex-1 min-w-0 flex flex-col">
+                        <div className="flex items-start justify-between gap-2">
+                          <Link
+                            href={`/shop/${saree.id}`}
+                            onClick={closeCart}
+                            className="text-[0.95rem] font-semibold text-ink leading-tight hover:text-maroon-deep transition-colors line-clamp-2 flex-1"
+                          >
+                            {saree.name}
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(saree.id, vid)}
+                            aria-label={`Remove ${saree.name}`}
+                            className="shrink-0 w-7 h-7 flex items-center justify-center text-ink/55 hover:text-maroon-deep transition-colors"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                              <path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="mt-1 text-sm font-bold text-ink tabular-nums">
+                          MRP {formatINR(saree.price)}
+                        </div>
+                        <div className="mt-1 text-[0.72rem] text-ink/60">
+                          {saree.weave}
+                        </div>
+                        {variant && (
+                          <div className="mt-1.5 flex items-center gap-1.5 text-[0.72rem] text-ink/75">
+                            <span
+                              aria-hidden
+                              className="inline-block w-3 h-3 rounded-full ring-1 ring-black/15"
+                              style={{ background: variant.hex }}
+                            />
+                            <span>Colour: <span className="font-semibold text-ink">{variant.colour}</span></span>
+                          </div>
+                        )}
+                        <div className="mt-auto pt-3 flex items-center justify-between gap-2">
+                          <div className="flex flex-col gap-1">
+                            <QtyStepper
+                              qty={qty}
+                              onMinus={() => updateCartQty(saree.id, qty - 1, vid)}
+                              onPlus={() => updateCartQty(saree.id, qty + 1, vid)}
+                              plusDisabled={atCap}
+                            />
+                            {cap != null && cap > 0 && cap <= 5 && (
+                              <span className="text-[0.65rem] text-maroon font-medium">
+                                {atCap ? `Only ${cap} in stock — all added` : `Only ${cap} left in stock`}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm font-bold text-ink tabular-nums">
+                            {formatINR(saree.price * qty)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
 
               {/* Order Summary — Kalki pattern: MRP Total, Discount on
@@ -344,18 +366,23 @@ function QtyStepper({
   qty,
   onMinus,
   onPlus,
+  plusDisabled = false,
 }: {
   qty: number;
   onMinus: () => void;
   onPlus: () => void;
+  // Disabled when qty has reached the live stock cap. The store still
+  // clamps on click too, so this is purely a UX signal that + is spent.
+  plusDisabled?: boolean;
 }) {
   return (
     <div className="inline-flex items-center border border-ink/20">
       <button
         type="button"
         onClick={onMinus}
+        disabled={qty <= 1}
         aria-label="Decrease quantity"
-        className="w-7 h-7 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-sm"
+        className="w-7 h-7 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-sm disabled:text-ink/25 disabled:hover:bg-transparent disabled:hover:text-ink/25 disabled:cursor-not-allowed"
       >
         −
       </button>
@@ -363,8 +390,9 @@ function QtyStepper({
       <button
         type="button"
         onClick={onPlus}
+        disabled={plusDisabled}
         aria-label="Increase quantity"
-        className="w-7 h-7 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-sm"
+        className="w-7 h-7 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory transition-colors text-sm disabled:text-ink/25 disabled:hover:bg-transparent disabled:hover:text-ink/25 disabled:cursor-not-allowed"
       >
         +
       </button>

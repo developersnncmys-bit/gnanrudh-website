@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { SAREES, BADGE_LABEL, formatINR } from '@/lib/sarees';
+import { SAREES, BADGE_LABEL, formatINR, isSoldOut } from '@/lib/sarees';
 import { getProductHero } from '@/lib/product-images';
 import WishlistButton from '@/components/shop/WishlistButton';
 import ViewSimilarButton from '@/components/shop/ViewSimilarButton';
@@ -61,6 +61,12 @@ export default function ProductCard({
 }) {
   const { mrp, badges } = saree;
   const discount = mrp ? Math.round(((mrp - saree.price) / mrp) * 100) : 0;
+  // When every variant's live piece count is zero, overlay the tile
+  // with a muted "Sold Out" scrim. The link still navigates to the PDP
+  // so the shopper can see details / wishlist / colour history — the
+  // CTAs on the PDP collapse to the disabled "Out of Stock" chip (see
+  // ProductInfo.tsx), so no sale can be started from either surface.
+  const soldOut = isSoldOut(saree);
   // Product cards only surface the stock-signal badges — Ready To Ship /
   // Selling Fast. Marketing badges (Bestseller / On Sale / New In /
   // Featured) are hidden on cards because they drive their own landing
@@ -71,7 +77,11 @@ export default function ProductCard({
   );
 
   return (
-    <Link href={`/shop/${saree.id}`} className="group block bg-white">
+    <Link
+      href={`/shop/${saree.id}`}
+      aria-label={soldOut ? `${saree.name} — sold out` : saree.name}
+      className="group block bg-white"
+    >
       <div className={`relative ${compact ? 'aspect-square' : 'aspect-[2/3]'} overflow-hidden bg-gray-100`}>
         <Image
           src={getProductHero(saree)}
@@ -79,10 +89,24 @@ export default function ProductCard({
           fill
           priority={priority}
           sizes="(max-width: 768px) 50vw, (max-width: 1280px) 28vw, 22vw"
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
+          className={`object-cover transition-transform duration-500 group-hover:scale-105 ${
+            soldOut ? 'grayscale opacity-70' : ''
+          }`}
         />
 
-        {!hideDiscountOverlay && discount > 0 && (
+        {soldOut && (
+          <>
+            <div
+              aria-hidden
+              className="absolute inset-0 bg-ink/15 pointer-events-none z-10"
+            />
+            <div className="absolute top-2 left-2 z-20 bg-ink text-white px-2 py-0.5 text-[0.65rem] font-bold tracking-wide uppercase">
+              Sold Out
+            </div>
+          </>
+        )}
+
+        {!soldOut && !hideDiscountOverlay && discount > 0 && (
           <div className="absolute top-2 left-2 bg-maroon-deep text-white px-2 py-0.5 text-[0.65rem] font-bold tracking-wide z-10">
             {discount}% OFF
           </div>

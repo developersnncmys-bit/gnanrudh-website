@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { type SAREES, formatINR, getColorways } from '@/lib/sarees';
+import { type SAREES, formatINR, getColorways, isSoldOut } from '@/lib/sarees';
 import { getPdpVariants, getProductHero } from '@/lib/product-images';
 import { useLiveSarees } from '@/lib/catalog';
 import { useShop } from '@/lib/shop-store';
@@ -50,7 +50,12 @@ export default function ProductInfo({
   const handleBuyItNow = () => {
     if (!authHydrated) return;
     const proceed = () => {
-      if (!inCart(saree.id)) addToCart(saree.id, quantity);
+      // Target the specific colour line when a swatch is picked; otherwise
+      // the vid-less "pick at checkout" line. `inCart` with vid narrows to
+      // that exact line so Buy It Now doesn't double-add when the shopper
+      // already has a different colour of this same saree bagged.
+      const vid = colorId || null;
+      if (!inCart(saree.id, vid)) addToCart(saree.id, quantity, vid);
       openCheckout();
     };
     if (!user) {
@@ -70,7 +75,18 @@ export default function ProductInfo({
   // stock, both Add to Cart and Buy It Now swap to a disabled
   // "Out of Stock" state.
   const selectedVariant = colorId ? saree.variants?.find((v) => v.id === colorId) ?? null : null;
-  const isSelectedOutOfStock = Boolean(selectedVariant) && (selectedVariant?.stock ?? 0) <= 0;
+  // OOS gate on the CTAs. Two conditions:
+  //   1. A specific variant is picked and its live piece count is 0 — the
+  //      original per-colour guard.
+  //   2. No variant is picked yet BUT every variant across the product has
+  //      live stock 0 — i.e. isSoldOut() === true. Without this, the "Add
+  //      to Cart" / "Buy It Now" CTAs stayed live on a sold-out product
+  //      until the shopper clicked a swatch, and the cart would end up
+  //      with an unshippable line that order creation would then 409 on.
+  const productSoldOut = isSoldOut(saree);
+  const isSelectedOutOfStock =
+    (Boolean(selectedVariant) && (selectedVariant?.stock ?? 0) <= 0) ||
+    (!selectedVariant && productSoldOut);
   // Re-clamp quantity state when the picked variant's stock drops below the
   // current typed value — e.g. "pick Red (stock 5), bump qty to 5, switch to
   // Blue (stock 2)" must land at 2, not silently add 5 of Blue.
@@ -155,7 +171,12 @@ export default function ProductInfo({
         Style No <span className="text-gray-700 font-medium">{saree.id.toUpperCase()}</span>
       </div>
 
-      {badge && (
+      {/* Admin marketing badges (Selling Fast, Ready to Ship, etc.) are
+          suppressed on a sold-out product — they contradict the "Out of
+          Stock" messaging and would make a dead listing look live. The
+          CTAs below collapse to the disabled chip regardless, but the
+          top-of-page chip has to agree. */}
+      {badge && !productSoldOut && (
         <div
           className="inline-block text-white px-3.5 py-1 text-[0.7rem] font-semibold tracking-[0.12em] uppercase mb-4 shadow-[0_1px_2px_rgba(77,0,21,0.18)]"
           style={{
@@ -370,16 +391,20 @@ export default function ProductInfo({
           stock because the CTAs collapse to "Out of Stock" anyway. */}
       {!isSelectedOutOfStock && (() => {
         const maxQty = Math.max(1, selectedVariant?.stock ?? 10);
-        // When the product is already in the cart the quantity picker
-        // drives the cart line directly — +/− / typing mutates the
-        // stored qty via updateCartQty. Otherwise it drives local state
-        // (the "pending" qty the next Add to Cart click will use).
-        const cartLine = hydrated ? cartItems.find((i) => i.saree.id === saree.id) : null;
+        // Target the cart line that matches the currently selected colour
+        // (or the vid-less one when no swatch is picked). Previously the
+        // picker drove ANY cart line for this saree, so picking a new
+        // colour on a saree already bagged in a different colour would
+        // silently overwrite the bagged line's qty.
+        const vid = colorId || null;
+        const cartLine = hydrated
+          ? cartItems.find((i) => i.saree.id === saree.id && (i.variant?.id ?? null) === vid)
+          : null;
         const activeQty = cartLine ? cartLine.qty : quantity;
         const clamped = Math.max(1, Math.min(maxQty, activeQty));
         const setQty = (n: number) => {
           const v = Math.max(1, Math.min(maxQty, n));
-          if (cartLine) updateCartQty(saree.id, v);
+          if (cartLine) updateCartQty(saree.id, v, vid);
           else setQuantity(v);
         };
         const dec = () => setQty(clamped - 1);
@@ -424,11 +449,40 @@ export default function ProductInfo({
                 </button>
               </div>
             </div>
-            {selectedVariant && (selectedVariant.stock ?? 0) > 0 && (selectedVariant.stock ?? 0) <= 5 && (
-              <p className="mt-2 text-[0.7rem] text-maroon font-medium">
-                Only {selectedVariant.stock} left in this colour.
-              </p>
-            )}
+            {selectedVariant && (selectedVariant.stock ?? 0) > 0 && (() => {
+              // Stock signal below the quantity picker, rendered as a tinted
+              // pill so it reads as its own callout and not as body copy.
+              // Low stock (≤5) swaps to a red/maroon palette for urgency;
+              // comfortable stock stays in a neutral amber so the number is
+              // visible but not alarmist.
+              const stock = selectedVariant.stock ?? 0;
+              const isLow = stock <= 5;
+              return (
+                <div
+                  role="status"
+                  className={`mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 text-[0.72rem] font-semibold tracking-wide rounded-sm border ${
+                    isLow
+                      ? 'bg-maroon/10 text-maroon border-maroon/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]'
+                      : 'bg-amber-50 text-amber-800 border-amber-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]'
+                  }`}
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden
+                    className={isLow ? 'animate-pulse' : ''}
+                  >
+                    <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z" />
+                  </svg>
+                  <span>
+                    Only <span className="tabular-nums font-bold">{stock}</span>{' '}
+                    {stock === 1 ? 'piece' : 'pieces'} left in this colour.
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
@@ -448,7 +502,14 @@ export default function ProductInfo({
             Out of Stock
           </button>
         ) : (() => {
-          const cartLine = hydrated ? cartItems.find((i) => i.saree.id === saree.id) : null;
+          // "Added · View Bag" lights up only when a line for the
+          // currently-picked colour (or the vid-less one before any pick)
+          // is in the bag. A red version in cart shouldn't claim that the
+          // blue the shopper is now viewing is already "added".
+          const vid = colorId || null;
+          const cartLine = hydrated
+            ? cartItems.find((i) => i.saree.id === saree.id && (i.variant?.id ?? null) === vid)
+            : null;
           const effectiveQty = cartLine ? cartLine.qty : quantity;
           return (
             <>
@@ -468,7 +529,7 @@ export default function ProductInfo({
               ) : (
                 <button
                   type="button"
-                  onClick={() => addToCart(saree.id, quantity)}
+                  onClick={() => addToCart(saree.id, quantity, colorId || null)}
                   className="w-full border border-gray-900 text-gray-900 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-gray-900 hover:text-white transition-colors flex items-center justify-center gap-2.5"
                 >
                   <span>Add to Cart</span>

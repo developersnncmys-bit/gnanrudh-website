@@ -268,19 +268,23 @@ export default function CheckoutPopup() {
     // Captured once up-front so our local-state mirror stays consistent
     // with what the server stored even if items change between create and
     // post-payment routing.
-    const orderItems: OrderItemRecord[] = items.map(({ saree, qty }) => {
-      // Pick the first variant that still has stock so piece reservation
-      // on the backend lands on something fulfillable. Falls back to the
-      // first variant if none report stock (the admin numbers are
-      // denormalised — the piece-level check is authoritative). The cart
-      // doesn't force a colour pick before Add to Cart yet, so this is
-      // the "default colour" behaviour.
-      const variants = saree.variants || [];
-      const pickedVariant =
-        variants.find((v) => (v.stock ?? 0) > 0) ?? variants[0];
+    const orderItems: OrderItemRecord[] = items.map(({ saree, variant, qty }) => {
+      // Use the colour the shopper actually picked on the PDP (resolved
+      // onto the cart line). For legacy vid-less lines — a shopper who
+      // tapped Add to Cart before picking a swatch — fall back to the
+      // first in-stock variant so the backend piece reservation still
+      // lands on something fulfillable. Falls back further to the first
+      // variant if none report stock (the admin numbers are denormalised
+      // — the piece-level check is authoritative).
+      let pickedVariantId = variant?.id;
+      if (!pickedVariantId) {
+        const variants = saree.variants || [];
+        const picked = variants.find((v) => (v.stock ?? 0) > 0) ?? variants[0];
+        pickedVariantId = picked?.id;
+      }
       return {
         productId: saree.id,
-        variantId: pickedVariant?.id,
+        variantId: pickedVariantId,
         name: saree.name,
         weave: saree.weave,
         qty,
@@ -509,8 +513,8 @@ export default function CheckoutPopup() {
             {summaryOpen && (
               <div className="px-5 py-4 border-b border-ink/10 bg-bone/15">
                 <ul className="divide-y divide-ink/10 mb-3">
-                  {items.map(({ saree, qty }) => (
-                    <li key={saree.id} className="flex gap-3 py-3 first:pt-0">
+                  {items.map(({ saree, variant, qty }) => (
+                    <li key={`${saree.id}::${variant?.id ?? ''}`} className="flex gap-3 py-3 first:pt-0">
                       <div className="relative w-12 h-16 shrink-0 overflow-hidden bg-bone">
                         <Image
                           src={getProductHero(saree)}
@@ -525,7 +529,13 @@ export default function CheckoutPopup() {
                         <div className="text-xs font-semibold text-ink leading-tight line-clamp-2">
                           {saree.name}
                         </div>
-                        <div className="text-[11px] text-ink/55 mt-0.5">Qty {qty}</div>
+                        <div className="text-[11px] text-ink/55 mt-0.5">
+                          {variant && (
+                            <>
+                              <span className="inline-block align-middle w-2 h-2 rounded-full ring-1 ring-black/15 mr-1" style={{ background: variant.hex }} aria-hidden />
+                              {variant.colour} · </>
+                          )}Qty {qty}
+                        </div>
                       </div>
                       <div className="text-xs font-semibold text-ink tabular-nums shrink-0">
                         {formatINR(saree.price * qty)}

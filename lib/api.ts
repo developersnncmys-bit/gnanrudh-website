@@ -325,10 +325,16 @@ export const customerAuthApi = {
   getWishlist: () => api<{ items: string[] }>(`/api/customer-auth/wishlist`),
   setWishlist: (ids: string[]) =>
     api<{ items: string[] }>(`/api/customer-auth/wishlist`, { method: 'PUT', body: JSON.stringify({ ids }) }),
+  // Each cart line optionally carries a `variantId` — the colour swatch
+  // the shopper picked on the PDP. Legacy entries (saved before the
+  // variant-aware refactor) come back without the field; the shop store
+  // treats a missing/null variantId as "no colour chosen yet" and keys
+  // the cart row by (productId, variantId ?? null).
   getCart: () =>
-    api<{ items: Array<{ productId: string; quantity: number }> }>(`/api/customer-auth/cart`),
-  setCart: (items: Array<{ productId: string; quantity: number }>) =>
-    api<{ items: Array<{ productId: string; quantity: number }> }>(
+    api<{ items: Array<{ productId: string; variantId?: string | null; quantity: number }> }>(
+      `/api/customer-auth/cart`),
+  setCart: (items: Array<{ productId: string; variantId?: string | null; quantity: number }>) =>
+    api<{ items: Array<{ productId: string; variantId?: string | null; quantity: number }> }>(
       `/api/customer-auth/cart`, { method: 'PUT', body: JSON.stringify({ items }) }),
 };
 

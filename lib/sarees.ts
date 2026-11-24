@@ -890,6 +890,39 @@ export function formatINR(amount: number) {
   }).format(amount);
 }
 
+// Sum live stock across every colour variant of a saree.
+//   - `null`  → the saree has no variants, or every variant has an unknown
+//               stock (e.g. legacy seed products). Treat as "unknown, assume
+//               saleable"; the piece-level reservation at order time is the
+//               final guard.
+//   - `0`     → the admin has explicitly said every variant is empty. The
+//               storefront must gate the sale (card overlay, disabled CTAs,
+//               shop-store add refusal).
+//   - `> 0`   → at least one colour is in stock. Variant-level OOS still
+//               fires on the picked colour in ProductInfo.
+// Values on each variant are overlaid server-side by overlayLiveStock in
+// backend/src/routes/public.js, so this helper reads the live Piece count
+// per variant and never the stale `variant.stock` denormalisation.
+export function totalStock(saree: Saree): number | null {
+  if (!saree.variants || saree.variants.length === 0) return null;
+  let sum = 0;
+  let anyKnown = false;
+  for (const v of saree.variants) {
+    if (typeof v.stock === 'number') {
+      sum += v.stock;
+      anyKnown = true;
+    }
+  }
+  return anyKnown ? sum : null;
+}
+
+// `true` iff totalStock() returned 0 — i.e. the admin has published this
+// saree with zero pieces across every variant. Used by cards, PDP CTAs
+// and the cart store so "sold out" is one check everywhere.
+export function isSoldOut(saree: Saree): boolean {
+  return totalStock(saree) === 0;
+}
+
 // ── Colorways ─────────────────────────────────────────────────────────────
 //
 // Each saree is shown on the PDP with a short list of available colorways
