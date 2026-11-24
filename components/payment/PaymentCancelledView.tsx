@@ -50,8 +50,13 @@ export default function PaymentCancelledView() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* When we have an order id, route to the dedicated retry page
+                — it fetches the order's live status and either reopens
+                Razorpay (Payment pending) or forwards to success (already
+                paid via webhook). Falling back to the bag view only when
+                no order id is present. */}
             <Link
-              href="/shop?bag=1"
+              href={orderId ? `/payment/retry?order=${encodeURIComponent(orderId)}` : '/shop?bag=1'}
               className="flex-1 bg-maroon-deep text-ivory py-2.5 text-center text-xs font-bold tracking-wider uppercase hover:bg-maroon transition-colors"
             >
               Retry payment

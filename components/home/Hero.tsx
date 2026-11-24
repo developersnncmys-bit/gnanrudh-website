@@ -48,9 +48,24 @@ function toSlide(r: ServerHeroSlide): Slide {
 }
 
 // Dimensions shared between the live carousel and the loading skeleton so
-// the hero never jumps height on first paint.
+// the hero never jumps height on first paint. Values are kept intentionally
+// modest on mobile so the hero occupies ~60% of the viewport and leaves the
+// nav + a glimpse of what's below in frame — the previous 88vh + 526 px
+// floor took the entire phone screen on 375 × 812 devices, which is why
+// the banner looked like a huge dark slab on the sim.
 const HERO_SECTION_CLASS =
-  'relative w-full h-[calc(88vh+6px)] sm:h-[calc(78vh-10px)] lg:h-[calc(85vh-10px)] xl:h-[calc(78vh-10px)] min-h-[526px] sm:min-h-[510px] md:min-h-[560px] lg:min-h-[720px] xl:min-h-[560px] max-h-[820px] lg:max-h-[1100px] xl:max-h-[820px] bg-[#1B0E0A] overflow-hidden';
+  [
+    'relative w-full bg-[#1B0E0A] overflow-hidden',
+    // Heights grow with the breakpoint so the brand still gets a cinematic
+    // widescreen hero on desktop, without crushing mobile.
+    'h-[60vh] sm:h-[65vh] md:h-[72vh] lg:h-[80vh] xl:h-[78vh]',
+    // Floors — prevent the hero from collapsing on short viewports (e.g.
+    // landscape phones) but stay well under the viewport height.
+    'min-h-[360px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px]',
+    // Caps — the cinematic feel plateaus; past these sizes the headline +
+    // CTA start to look lost against a sea of image.
+    'max-h-[560px] sm:max-h-[620px] md:max-h-[720px] lg:max-h-[860px] xl:max-h-[820px]',
+  ].join(' ');
 
 function HeroSkeleton() {
   return (

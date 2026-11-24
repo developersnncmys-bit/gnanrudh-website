@@ -103,7 +103,7 @@ export default function CraftStory() {
         />
       </div>
 
-      <div className="relative w-full min-h-[640px] md:min-h-[calc(95vh+30px)] overflow-hidden">
+      <div className="relative w-full min-h-[480px] md:min-h-[calc(95vh+30px)] overflow-hidden">
         {/* Art-directed hero — phones get mob-bridal.webp (portrait
             crop), desktops get banner3.webp (landscape). The native
             <picture> element lets the browser pick exactly one; Next's
@@ -143,15 +143,15 @@ export default function CraftStory() {
             Opaque near the bottom, fading to transparent as it rises,
             so the headline + CTA stay legible against any photograph. */}
         <div
-          className="md:hidden absolute inset-x-0 bottom-0 h-1/2 pointer-events-none"
+          className="md:hidden absolute inset-x-0 bottom-0 h-2/5 pointer-events-none"
           style={{
             background:
-              'linear-gradient(0deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.45) 35%, rgba(0,0,0,0.15) 75%, transparent 100%)',
+              'linear-gradient(0deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.32) 45%, rgba(0,0,0,0.08) 80%, transparent 100%)',
           }}
         />
 
-        <div className="relative z-10 min-h-[640px] md:min-h-[calc(95vh+30px)] flex items-end md:items-center justify-center md:justify-end">
-          <div className="w-full md:w-3/5 lg:w-1/2 px-6 md:px-12 lg:px-20 pt-6 pb-10 md:py-14 text-ivory flex flex-col items-center text-center md:translate-y-6 lg:translate-y-10">
+        <div className="absolute inset-0 z-10 flex items-end md:items-center justify-center md:justify-end">
+          <div className="w-full md:w-3/5 lg:w-1/2 px-5 md:px-12 lg:px-20 pt-6 pb-7 md:py-14 text-ivory flex flex-col items-center text-center md:translate-y-6 lg:translate-y-10">
             <h3
               className="font-bold text-3xl md:text-7xl lg:text-7xl leading-[1.05] tracking-tight"
               style={{

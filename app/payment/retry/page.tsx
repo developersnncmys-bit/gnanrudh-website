@@ -7,6 +7,7 @@ import { ordersApi, paymentApi, type CustomerOrder } from '@/lib/api';
 import { openRazorpay } from '@/lib/razorpay';
 import { useAuth } from '@/lib/auth';
 import { useLoginModal } from '@/lib/login-modal';
+import { useOrders } from '@/lib/orders';
 
 // /payment/retry?order=<id>
 // Lands here when the Razorpay verify step fails, the browser tab closed
@@ -31,7 +32,22 @@ function RetryInner() {
   const orderId = params?.get('order') || '';
   const { user, hydrated: authHydrated } = useAuth();
   const { openLogin } = useLoginModal();
+  const { cancelOrder } = useOrders();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+
+  // Same wrapper as CheckoutPopup — surface cancel failures so stuck
+  // reservations don't silently orphan. See CheckoutPopup.tsx:144 for context.
+  const releaseServerReservation = useCallback(async (orderId: string, reason: string) => {
+    try {
+      await paymentApi.cancel(orderId);
+    } catch (err) {
+      const msg = (err as Error).message || 'unknown error';
+      console.error(`[retry] paymentApi.cancel failed for ${orderId} (${reason}):`, msg);
+      alert(
+        `We couldn't release your order's reservation automatically (ref ${orderId}). Please contact support — you were NOT charged.`,
+      );
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!orderId) {
@@ -114,12 +130,16 @@ function RetryInner() {
         onDismiss: async () => {
           // User backed out again. Refetch so we show the latest state —
           // if a webhook caught the capture in the meantime we don't want
-          // to leave them staring at a stale "retry" screen.
-          try { await paymentApi.cancel(phase.order._id); } catch { /* swallow */ }
+          // to leave them staring at a stale "retry" screen. Also mirror
+          // the cancel into local orders so the Account page's badge
+          // flips to "Cancelled" immediately.
+          cancelOrder(phase.order._id, 'retry-dismissed');
+          await releaseServerReservation(phase.order._id, 'retry-dismissed');
           load();
         },
         onFailure: async () => {
-          try { await paymentApi.cancel(phase.order._id); } catch { /* swallow */ }
+          cancelOrder(phase.order._id, 'retry-failed');
+          await releaseServerReservation(phase.order._id, 'retry-failed');
           load();
         },
       });

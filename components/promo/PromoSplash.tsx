@@ -78,7 +78,7 @@ export default function PromoSplash() {
       />
 
       <div
-        className={`relative w-full max-w-[860px] aspect-[16/10] max-h-[78vh] overflow-hidden shadow-2xl bg-ink transition-all duration-300 ${
+        className={`relative w-full max-w-[860px] aspect-[4/5] md:aspect-[16/10] max-h-[90vh] md:max-h-[78vh] overflow-hidden shadow-2xl bg-ink transition-all duration-300 ${
           closing ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
         }`}
       >

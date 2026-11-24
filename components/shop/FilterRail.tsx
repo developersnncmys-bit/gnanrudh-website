@@ -56,11 +56,11 @@ function Check({
         )}
       </span>
       <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
-      <span className={`text-sm leading-tight flex-1 ${checked ? 'text-gray-900 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`}>
+      <span className={`text-sm leading-tight flex-1 ${checked ? 'text-gray-900 font-semibold' : 'text-gray-900 group-hover:text-black'}`}>
         {label}
       </span>
       {typeof count === 'number' && (
-        <span className="text-xs text-gray-500 tabular-nums">{count}</span>
+        <span className="text-xs text-gray-700 font-medium tabular-nums">{count}</span>
       )}
     </label>
   );
@@ -75,7 +75,7 @@ function Radio({ label, checked, onChange }: { label: string; checked: boolean; 
         {checked && <span className="w-2 h-2 rounded-full bg-gray-900" />}
       </span>
       <input type="radio" checked={checked} onChange={onChange} className="sr-only" />
-      <span className={`text-sm leading-tight flex-1 ${checked ? 'text-gray-900 font-medium' : 'text-gray-700 group-hover:text-gray-900'}`}>
+      <span className={`text-sm leading-tight flex-1 ${checked ? 'text-gray-900 font-semibold' : 'text-gray-900 group-hover:text-black'}`}>
         {label}
       </span>
     </label>
@@ -175,7 +175,7 @@ export default function FilterRail({
           onToggle={toggleColor}
         />
         {filters.colors.length > 0 && (
-          <div className="mt-2 text-xs text-gray-600">
+          <div className="mt-2 text-xs text-gray-800 font-medium">
             {filters.colors
               .map((id) => STANDARD_COLORWAYS.find((c) => c.id === id)?.name)
               .filter(Boolean)

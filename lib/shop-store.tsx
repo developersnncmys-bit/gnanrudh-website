@@ -288,11 +288,24 @@ export function ShopProvider({ children }: { children: ReactNode }) {
         const mergedWishlist = Array.from(new Set([...serverIds, ...s.wishlist]));
         // Cart = union by productId, max(server_qty, local_qty) so
         // conflicts land on the higher count rather than silently
-        // halving the quantity.
+        // halving the quantity. THEN cap each line to the product's live
+        // in-stock total — without this, a local qty of 15 against a
+        // 3-stock product would survive the merge and then explode at
+        // checkout with a 409 "not enough stock". Capping here keeps the
+        // cart drawer honest. Products not in the catalogue map get
+        // passed through (pruned separately by the orphan-cart effect).
         const qtyById = new Map<string, number>();
         for (const i of serverCart) qtyById.set(i.productId, Math.max(qtyById.get(i.productId) || 0, i.quantity));
         for (const i of s.cart) qtyById.set(i.productId, Math.max(qtyById.get(i.productId) || 0, i.quantity));
-        const mergedCart: CartItem[] = Array.from(qtyById, ([productId, quantity]) => ({ productId, quantity }));
+        const mergedCart: CartItem[] = Array.from(qtyById, ([productId, quantity]) => {
+          const saree = sareeById.get(productId);
+          if (!saree || !saree.variants?.length) return { productId, quantity };
+          const totalStock = saree.variants.reduce((sum, v) => sum + (v.stock ?? 0), 0);
+          // If we can't trust any stock number (all undefined), leave qty
+          // alone; the checkout reservation step will reject properly.
+          if (totalStock <= 0) return { productId, quantity };
+          return { productId, quantity: Math.min(quantity, totalStock) };
+        });
         // Only push back if the merge differs from what the server sent.
         if (mergedWishlist.length !== serverIds.length) {
           customerAuthApi.setWishlist(mergedWishlist).catch(() => {});

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ordersApi, getToken, type CustomerOrder } from './api';
+import { useAuth } from './auth';
 
 export type OrderStatus = 'placed' | 'cancelled';
 export type PayMethod = 'upi' | 'card' | 'netbanking' | 'cod';
@@ -75,13 +76,20 @@ type OrdersContextValue = OrdersState & {
   getOrder: (id: string) => Order | undefined;
 };
 
-const STORAGE_KEY = 'gnanrudh-orders-v1';
+// AUTH-02: orders cache is scoped per signed-in identity so a browser
+// shared across users never leaks orders from one account to another.
+// Guests write to the shared 'guest' bucket; on sign-in the active bucket
+// flips to the user's email so each account sees only its own cache.
+const STORAGE_PREFIX = 'gnanrudh-orders-v1:';
+const LEGACY_STORAGE_KEY = 'gnanrudh-orders-v1';
+const storageKeyFor = (owner: string | null | undefined) =>
+  `${STORAGE_PREFIX}${(owner || 'guest').toLowerCase()}`;
 const Ctx = createContext<OrdersContextValue | null>(null);
 
-function readStorage(): OrdersState {
+function readStorage(owner: string | null | undefined): OrdersState {
   if (typeof window === 'undefined') return { orders: [] };
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKeyFor(owner));
     if (!raw) return { orders: [] };
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return { orders: [] };
@@ -89,6 +97,13 @@ function readStorage(): OrdersState {
   } catch {
     return { orders: [] };
   }
+}
+
+// AUTH-02: wipe the pre-scoping global bucket on first load so a stale
+// cache written by an older build can't leak into whoever signs in now.
+function purgeLegacyStorage() {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
 }
 
 // Order IDs use a short prefix + last 8 digits of epoch + 2-char random
@@ -100,16 +115,27 @@ function genOrderId(): string {
 }
 
 export function OrdersProvider({ children }: { children: ReactNode }) {
+  const { user, hydrated: authHydrated } = useAuth();
+  // The bucket we read/write is tied to the signed-in email. Email is
+  // lower-cased in storageKeyFor so case variance in the backend doesn't
+  // spawn ghost buckets. Guests share the 'guest' bucket until they sign in.
+  const owner = user?.email || null;
   const [state, setState] = useState<OrdersState>({ orders: [] });
   const [hydrated, setHydrated] = useState(false);
 
+  // Drop the pre-scoping global bucket once per boot so its contents can't
+  // leak into whichever user signs in next.
+  useEffect(() => { purgeLegacyStorage(); }, []);
+
+  // Rebind to the active user's bucket whenever auth settles or the signed-in
+  // identity changes. Resets local state first (so other-user orders can
+  // never render for a split second), then reads that user's own cache, then
+  // overlays the server list for signed-in users.
   useEffect(() => {
-    setState(readStorage());
+    if (!authHydrated) return;
+    setState(readStorage(owner));
     setHydrated(true);
-    // If signed in, overlay the server's order list on top of the local
-    // snapshot. Server orders use the backend's `_id` (e.g. "O20261119…")
-    // and richer status strings — see mergeServerOrders for the mapping.
-    if (getToken()) {
+    if (owner && getToken()) {
       ordersApi.list()
         .then((res) => {
           const serverOrders = (res.items || []).map(mapServerOrder);
@@ -117,26 +143,29 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
         })
         .catch(() => { /* leave local orders untouched if the API is down */ });
     }
-  }, []);
+  }, [authHydrated, owner]);
 
   useEffect(() => {
     if (!hydrated || typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(storageKeyFor(owner), JSON.stringify(state));
     } catch {
       /* localStorage full / disabled — silent */
     }
-  }, [state, hydrated]);
+  }, [state, hydrated, owner]);
 
-  // Cross-tab sync — if another tab places/cancels, mirror it here.
+  // Cross-tab sync — if another tab places/cancels in the SAME bucket,
+  // mirror it here. Other users' buckets are ignored so a second window
+  // signed in as a different account can't push data across.
   useEffect(() => {
+    const myKey = storageKeyFor(owner);
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY) return;
-      setState(readStorage());
+      if (e.key !== myKey) return;
+      setState(readStorage(owner));
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [owner]);
 
   const placeOrder = useCallback((input: PlaceOrderInput): Order => {
     const order: Order = {

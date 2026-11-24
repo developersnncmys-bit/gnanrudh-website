@@ -67,8 +67,21 @@ export default function AccountShell({
     }
   }, [hydrated, user, router, openLogin]);
 
-  if (!hydrated || !user) {
-    return <div className="min-h-screen bg-white" />;
+  // Pre-auth-hydration + unauthenticated states render a branded loading
+  // card instead of a blank screen. The customer token lives in
+  // localStorage, so a true Next.js middleware auth check isn't possible
+  // without a token-move to cookies — this at least stops the empty
+  // white flash agent QA flagged ("brief skeleton frame on direct URL").
+  if (!hydrated) {
+    return <AccountGate message="Checking sign-in…" />;
+  }
+  if (!user) {
+    return (
+      <AccountGate
+        message="Sign in to view your account."
+        hint="Redirecting you home — the sign-in box will open there."
+      />
+    );
   }
 
   const initial = (user.name?.[0] || user.email[0] || '?').toUpperCase();
@@ -186,4 +199,22 @@ function matchesActive(pathname: string | null, href: string): boolean {
   if (href.startsWith('/shop')) return false;
   if (href === '/account') return pathname === '/account';
   return pathname === href || pathname.startsWith(href + '/');
+}
+
+// Shown while auth hasn't hydrated yet, or when an unauthenticated user
+// lands on an /account/* URL directly. Replaces the earlier blank white
+// div so the page doesn't flash empty content before the redirect fires.
+function AccountGate({ message, hint }: { message: string; hint?: string }) {
+  return (
+    <main className="min-h-screen bg-white flex items-center justify-center px-6">
+      <div className="max-w-sm w-full text-center">
+        <div
+          className="mx-auto w-10 h-10 rounded-full border-2 border-ink/10 border-t-maroon-deep animate-spin"
+          aria-hidden
+        />
+        <p className="mt-6 text-sm font-semibold text-ink">{message}</p>
+        {hint && <p className="mt-2 text-xs text-ink/60 leading-relaxed">{hint}</p>}
+      </div>
+    </main>
+  );
 }

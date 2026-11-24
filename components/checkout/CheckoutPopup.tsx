@@ -53,7 +53,7 @@ export default function CheckoutPopup() {
     selectAddress,
     openAddressModal,
   } = useAddresses();
-  const { placeOrder } = useOrders();
+  const { placeOrder, cancelOrder } = useOrders();
 
   const itemCount = items.reduce((sum, i) => sum + i.qty, 0);
 
@@ -132,6 +132,25 @@ export default function CheckoutPopup() {
     closeCheckout();
     closeCart();
     router.push(path);
+  };
+
+  // Release server-side piece reservation when the payment doesn't go
+  // through. Previously the paymentApi.cancel call was fire-and-forget
+  // with a swallowed catch — if it failed (network blip, 500), the pieces
+  // stayed Reserved and the next customer couldn't buy that variant until
+  // a cron cleaned up stale orders. Now we surface the failure as a toast
+  // + console entry so the user knows to reach out, and the admin sees
+  // the orphan in the orders list.
+  const releaseServerReservation = async (orderId: string, reason: string) => {
+    try {
+      await paymentApi.cancel(orderId);
+    } catch (err) {
+      const msg = (err as Error).message || 'unknown error';
+      console.error(`[checkout] paymentApi.cancel failed for ${orderId} (${reason}):`, msg);
+      alert(
+        `We couldn't release your order's reservation automatically (ref ${orderId}). Our team will tidy it up — you were NOT charged. Please contact support if you need this cleared immediately.`,
+      );
+    }
   };
 
   const onPlaceOrder = async (e: FormEvent) => {
@@ -322,19 +341,24 @@ export default function CheckoutPopup() {
         onDismiss: async () => {
           // User closed the modal without paying. Release the reserved
           // pieces so stock becomes available to others, mark the order
-          // Cancelled, and let the user keep shopping.
+          // Cancelled on the server, AND mirror the cancel into the local
+          // orders store so the Account page's "Placed" badge immediately
+          // flips to "Cancelled" without waiting for a page reload.
           setPlacing(false);
-          try { await paymentApi.cancel(serverOrder._id); } catch { /* swallow */ }
+          cancelOrder(serverOrder._id, 'payment-dismissed');
+          await releaseServerReservation(serverOrder._id, 'dismissed');
         },
         onFailure: async () => {
           setPlacing(false);
-          try { await paymentApi.cancel(serverOrder._id); } catch { /* swallow */ }
+          cancelOrder(serverOrder._id, 'payment-failed');
+          await releaseServerReservation(serverOrder._id, 'failed');
           alert('Payment failed. Please try again or pick a different payment method.');
         },
       });
     } catch (err) {
       setPlacing(false);
-      try { await paymentApi.cancel(serverOrder._id); } catch { /* swallow */ }
+      cancelOrder(serverOrder._id, 'razorpay-open-failed');
+      await releaseServerReservation(serverOrder._id, 'open-failed');
       alert(`Payment could not open: ${(err as Error).message}`);
     }
   };

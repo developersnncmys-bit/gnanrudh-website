@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AccountShell from '@/components/account/AccountShell';
 import { useOrders, type Order, type PayMethod, type ShipMethod } from '@/lib/orders';
+import { useShop } from '@/lib/shop-store';
+import { getProductHero } from '@/lib/product-images';
 import { formatINR } from '@/lib/sarees';
 
 const PAY_LABEL: Record<PayMethod, string> = {
@@ -86,6 +88,11 @@ function EmptyState() {
 }
 
 function OrderCard({ order, onCancel }: { order: Order; onCancel: () => void }) {
+  // Server-backed orders only echo pid/qty/price per line, so name/weave/image
+  // come back empty (see mapServerOrder in lib/orders.tsx). Resolve against
+  // the live catalogue so cards don't render a broken <img> with the pid as
+  // alt text. Falls back to whatever the order carried for legacy local orders.
+  const { findSaree } = useShop();
   const placedDate = new Date(order.createdAt).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
@@ -112,22 +119,29 @@ function OrderCard({ order, onCancel }: { order: Order; onCancel: () => void }) 
       {/* Body — items */}
       <div className="p-4 lg:p-5">
         <ul className="divide-y divide-ink/10">
-          {order.items.map((it) => (
+          {order.items.map((it) => {
+            const saree = findSaree(it.productId);
+            const image = it.image || (saree ? getProductHero(saree) : '');
+            const name = it.name && it.name !== it.productId ? it.name : saree?.name || it.productId;
+            const weave = it.weave || saree?.weave || '';
+            return (
             <li key={it.productId} className="flex gap-3 py-3 first:pt-0 last:pb-0">
               <Link
                 href={`/shop/${it.productId}`}
                 className="relative w-14 h-18 shrink-0 overflow-hidden bg-bone"
                 style={{ aspectRatio: '3 / 4' }}
               >
-                <Image src={it.image} alt={it.name} fill sizes="56px" className="object-cover" />
+                {image ? (
+                  <Image src={image} alt={name} fill sizes="56px" className="object-cover" />
+                ) : null}
               </Link>
               <div className="flex-1 min-w-0">
-                <div className="text-[11px] text-ink/55">{it.weave}</div>
+                <div className="text-[11px] text-ink/55">{weave}</div>
                 <Link
                   href={`/shop/${it.productId}`}
                   className="text-sm font-semibold text-ink hover:text-maroon line-clamp-2"
                 >
-                  {it.name}
+                  {name}
                 </Link>
                 <div className="text-[11px] text-ink/55 mt-0.5">
                   Qty {it.qty} · {formatINR(it.unitPrice)}
@@ -137,7 +151,8 @@ function OrderCard({ order, onCancel }: { order: Order; onCancel: () => void }) 
                 {formatINR(it.unitPrice * it.qty)}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
 
         {/* Meta + actions */}

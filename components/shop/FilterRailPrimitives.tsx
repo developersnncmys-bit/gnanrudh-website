@@ -120,7 +120,7 @@ export function Check({
           className={`text-[0.65rem] tabular-nums font-bold px-1.5 py-0.5 rounded-full transition-colors shrink-0 min-w-[20px] text-center ${
             checked
               ? 'bg-white/20 text-white'
-              : 'bg-gray-100 text-gray-600 group-hover:bg-gray-200'
+              : 'bg-gray-100 text-gray-900 group-hover:bg-gray-200'
           }`}
         >
           {count}
@@ -183,7 +183,7 @@ export function ColorRow({
           className={`text-[0.65rem] tabular-nums font-bold px-1.5 py-0.5 rounded-full transition-colors shrink-0 min-w-[20px] text-center ${
             checked
               ? 'bg-white/20 text-white'
-              : 'bg-gray-100 text-gray-600 group-hover:bg-gray-200'
+              : 'bg-gray-100 text-gray-900 group-hover:bg-gray-200'
           }`}
         >
           {count}

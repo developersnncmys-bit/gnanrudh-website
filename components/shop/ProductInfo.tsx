@@ -2,11 +2,12 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type SAREES, formatINR, getColorways } from '@/lib/sarees';
 import { getPdpVariants, getProductHero } from '@/lib/product-images';
 import { useLiveSarees } from '@/lib/catalog';
 import { useShop } from '@/lib/shop-store';
+import { useCartDrawer } from '@/lib/cart-drawer';
 import { useCheckoutModal } from '@/lib/checkout-modal';
 import { useLoginModal } from '@/lib/login-modal';
 import { useAuth } from '@/lib/auth';
@@ -31,7 +32,8 @@ export default function ProductInfo({
   colorId: string;
   onColorChange: (id: string) => void;
 }) {
-  const { addToCart, inCart, toggleWishlist, inWishlist, hydrated } = useShop();
+  const { addToCart, inCart, updateCartQty, cartItems, toggleWishlist, inWishlist, hydrated } = useShop();
+  const { openCart } = useCartDrawer();
   const { openCheckout } = useCheckoutModal();
   const { openLogin } = useLoginModal();
   const { user, hydrated: authHydrated } = useAuth();
@@ -69,6 +71,13 @@ export default function ProductInfo({
   // "Out of Stock" state.
   const selectedVariant = colorId ? saree.variants?.find((v) => v.id === colorId) ?? null : null;
   const isSelectedOutOfStock = Boolean(selectedVariant) && (selectedVariant?.stock ?? 0) <= 0;
+  // Re-clamp quantity state when the picked variant's stock drops below the
+  // current typed value — e.g. "pick Red (stock 5), bump qty to 5, switch to
+  // Blue (stock 2)" must land at 2, not silently add 5 of Blue.
+  useEffect(() => {
+    const cap = Math.max(1, selectedVariant?.stock ?? 10);
+    setQuantity((q) => Math.min(q, cap));
+  }, [selectedVariant?.stock]);
   // Same-weave variants for the "More in ..." strip — pulled from the live
   // catalog so new admin products show up as siblings without a rebuild.
   // First entry is this saree itself; the rest are same-weave live sarees
@@ -361,9 +370,20 @@ export default function ProductInfo({
           stock because the CTAs collapse to "Out of Stock" anyway. */}
       {!isSelectedOutOfStock && (() => {
         const maxQty = Math.max(1, selectedVariant?.stock ?? 10);
-        const clamped = Math.max(1, Math.min(maxQty, quantity));
-        const dec = () => setQuantity(Math.max(1, clamped - 1));
-        const inc = () => setQuantity(Math.min(maxQty, clamped + 1));
+        // When the product is already in the cart the quantity picker
+        // drives the cart line directly — +/− / typing mutates the
+        // stored qty via updateCartQty. Otherwise it drives local state
+        // (the "pending" qty the next Add to Cart click will use).
+        const cartLine = hydrated ? cartItems.find((i) => i.saree.id === saree.id) : null;
+        const activeQty = cartLine ? cartLine.qty : quantity;
+        const clamped = Math.max(1, Math.min(maxQty, activeQty));
+        const setQty = (n: number) => {
+          const v = Math.max(1, Math.min(maxQty, n));
+          if (cartLine) updateCartQty(saree.id, v);
+          else setQuantity(v);
+        };
+        const dec = () => setQty(clamped - 1);
+        const inc = () => setQty(clamped + 1);
         return (
           <div className="mt-5 max-w-[420px]">
             <div className="flex items-center justify-between gap-4">
@@ -386,10 +406,10 @@ export default function ProductInfo({
                   value={clamped}
                   onChange={(e) => {
                     const n = parseInt(e.target.value.replace(/\D/g, ''), 10);
-                    if (Number.isFinite(n) && n > 0) setQuantity(Math.min(maxQty, n));
-                    else if (e.target.value === '') setQuantity(1);
+                    if (Number.isFinite(n) && n > 0) setQty(n);
+                    else if (e.target.value === '') setQty(1);
                   }}
-                  onBlur={() => setQuantity(clamped)}
+                  onBlur={() => setQty(clamped)}
                   aria-label="Quantity"
                   className="w-12 text-center border-x border-gray-300 text-sm font-semibold text-ink tabular-nums focus:outline-none bg-white"
                 />
@@ -427,26 +447,45 @@ export default function ProductInfo({
           >
             Out of Stock
           </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => addToCart(saree.id, quantity)}
-              className="w-full border border-gray-900 text-gray-900 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-gray-900 hover:text-white transition-colors flex items-center justify-center gap-2.5"
-            >
-              <span>Add to Cart</span>
-              <span className="w-1 h-1 rounded-full bg-current" />
-              <span className="tabular-nums">{formatINR(total * quantity)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleBuyItNow}
-              className="w-full bg-ink text-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-maroon-deep transition-colors"
-            >
-              Buy It Now
-            </button>
-          </>
-        )}
+        ) : (() => {
+          const cartLine = hydrated ? cartItems.find((i) => i.saree.id === saree.id) : null;
+          const effectiveQty = cartLine ? cartLine.qty : quantity;
+          return (
+            <>
+              {cartLine ? (
+                <button
+                  type="button"
+                  onClick={openCart}
+                  className="w-full border border-emerald-700 text-emerald-700 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-emerald-700 hover:text-white transition-colors flex items-center justify-center gap-2.5"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M5 12.5 10 17.5 19.5 8" />
+                  </svg>
+                  <span>Added · View Bag</span>
+                  <span className="w-1 h-1 rounded-full bg-current" />
+                  <span className="tabular-nums">{formatINR(total * effectiveQty)}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => addToCart(saree.id, quantity)}
+                  className="w-full border border-gray-900 text-gray-900 bg-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-gray-900 hover:text-white transition-colors flex items-center justify-center gap-2.5"
+                >
+                  <span>Add to Cart</span>
+                  <span className="w-1 h-1 rounded-full bg-current" />
+                  <span className="tabular-nums">{formatINR(total * quantity)}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleBuyItNow}
+                className="w-full bg-ink text-white py-3 text-[0.75rem] font-semibold uppercase tracking-[0.1em] hover:bg-maroon-deep transition-colors"
+              >
+                Buy It Now
+              </button>
+            </>
+          );
+        })()}
       </div>
 
     </div>

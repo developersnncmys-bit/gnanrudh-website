@@ -95,7 +95,7 @@ export default function FilterDrawer({
             </button>
           </div>
           <div className="mt-1 flex items-center gap-3">
-            <div className="text-sm text-gray-500 tabular-nums">
+            <div className="text-sm text-gray-800 font-medium tabular-nums">
               {productCount} products
             </div>
             {activeCount > 0 && (

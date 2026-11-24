@@ -50,13 +50,24 @@ type AddressContextValue = AddressState & {
   selectAddress: (id: string) => void;
 };
 
-const STORAGE_KEY = 'gnanrudh-addresses-v1';
+// AUTH-02: address book is scoped per signed-in identity so a browser
+// shared across users never leaks a saved shipping address from one
+// account into another. Guests write to the shared 'guest' bucket; on
+// sign-in the active bucket flips to the user's email and any guest
+// addresses are migrated into it (and pushed to the server), then the
+// guest bucket is cleared. On sign-out the bucket flips back to 'guest'
+// and the in-memory state resets so the next user starts clean.
+const STORAGE_PREFIX = 'gnanrudh-addresses-v1:';
+const LEGACY_STORAGE_KEY = 'gnanrudh-addresses-v1';
+const GUEST_OWNER = 'guest';
+const storageKeyFor = (owner: string | null | undefined) =>
+  `${STORAGE_PREFIX}${(owner || GUEST_OWNER).toLowerCase()}`;
 const Ctx = createContext<AddressContextValue | null>(null);
 
-function readStorage(): AddressState {
+function readStorage(owner: string | null | undefined): AddressState {
   if (typeof window === 'undefined') return { addresses: [], selectedId: null };
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKeyFor(owner));
     if (!raw) return { addresses: [], selectedId: null };
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return { addresses: [], selectedId: null };
@@ -67,6 +78,13 @@ function readStorage(): AddressState {
   } catch {
     return { addresses: [], selectedId: null };
   }
+}
+
+// AUTH-02: wipe the pre-scoping global bucket on first load so a stale
+// cache written by an older build can't leak into whoever signs in now.
+function purgeLegacyStorage() {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* ignore */ }
 }
 
 let nextId = 0;
@@ -81,11 +99,35 @@ export function AddressProvider({ children }: { children: ReactNode }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalNextRoute, setModalNextRoute] = useState<string | null>(null);
 
-  // Hydrate from localStorage once on mount so the UI paints instantly.
+  // AUTH-02: the owner the current state belongs to. Auth hydration can
+  // switch this between 'guest' and a real email on login / logout, so
+  // we track it in a ref AND state — the state version drives the
+  // effects that need to re-read from the new bucket.
+  const { user, hydrated: authHydrated } = useAuth();
+  const signedInEmail = user?.email || null;
+  const ownerForStorage = (signedInEmail || GUEST_OWNER).toLowerCase();
+  const ownerRef = useRef(ownerForStorage);
+  const previousOwnerRef = useRef<string | null>(null);
+
+  // Hydrate on mount, and re-hydrate whenever the signed-in owner
+  // changes. Also runs once auth settles so the initial paint uses the
+  // right bucket. First effect also purges the legacy global key.
   useEffect(() => {
-    setState(readStorage());
+    if (!authHydrated) return;
+    purgeLegacyStorage();
+    const prev = previousOwnerRef.current;
+    if (prev !== null && prev !== ownerForStorage) {
+      // Owner just changed — reset in-memory state so the new user never
+      // sees a flash of the previous user's addresses before the fresh
+      // bucket loads. Fire-and-forget: the read below writes the final
+      // value synchronously inside this same tick.
+      setState({ addresses: [], selectedId: null });
+    }
+    setState(readStorage(ownerForStorage));
+    ownerRef.current = ownerForStorage;
+    previousOwnerRef.current = ownerForStorage;
     setHydrated(true);
-  }, []);
+  }, [authHydrated, ownerForStorage]);
 
   // Self-heal selection: whenever the address list changes, make sure the
   // selectedId still points at a real address. If it's null or stale, fall
@@ -104,9 +146,9 @@ export function AddressProvider({ children }: { children: ReactNode }) {
   // don't vanish), and push the local-only rows up so the server catches
   // up. Guarded by a per-session ref so it runs once per sign-in; on
   // sign-out the ref resets so the next sign-in merges again.
-  const { user, hydrated: authHydrated } = useAuth();
+  // (`user`, `authHydrated`, `signedInEmail` are already destructured
+  // in the hydrate effect above — we reuse those bindings.)
   const didSyncRef = useRef(false);
-  const signedInEmail = user?.email || null;
   useEffect(() => {
     if (!hydrated || !authHydrated) return;
     if (!signedInEmail) {
@@ -139,19 +181,26 @@ export function AddressProvider({ children }: { children: ReactNode }) {
       .catch(() => { didSyncRef.current = false; });
   }, [hydrated, authHydrated, signedInEmail]);
 
+  // Persist to the owner-scoped bucket. The hydrate effect above keeps
+  // ownerRef in sync with the currently-signed-in identity, so switching
+  // users reliably writes to the right key without one user's state
+  // overwriting another's.
   useEffect(() => {
     if (!hydrated || typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(storageKeyFor(ownerRef.current), JSON.stringify(state));
     } catch {
       // localStorage full / disabled — silent
     }
   }, [state, hydrated]);
 
+  // Cross-tab sync: mirror changes made to this owner's bucket from
+  // another tab. Tabs signed in as a different user write to a
+  // different key and are correctly ignored.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY) return;
-      setState(readStorage());
+      if (e.key !== storageKeyFor(ownerRef.current)) return;
+      setState(readStorage(ownerRef.current));
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
