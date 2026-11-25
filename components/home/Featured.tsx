@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { formatINR, TIERS, type Saree } from '@/lib/sarees';
@@ -16,13 +16,18 @@ type Tab = 'new' | 'bridal' | 'festive' | 'everyday';
 // Match against admin-tagged occasions (case-insensitive). A product's
 // `occasions` array can hold parent names ("Festive"), sub-occasion names
 // ("Diwali"), or both — the tab shows it as long as any entry matches the
-// tab label. Falls back to the price-tier bucket when the product has no
-// occasion tags at all, so legacy data still lands somewhere.
+// tab label.
+//
+// The price-tier bucket (bridal / festive / everyday) ALSO counts as a
+// match, even when occasions are tagged. This mirrors the card's tier
+// overlay — without it a saree whose tier is 'bridal' but whose only
+// occasion tag is 'festive' would show "BRIDAL" on the card under the
+// Festive tab yet vanish when the shopper clicked Bridal.
 const hasOccasion = (s: Saree, name: string) => {
   const needle = name.toLowerCase();
   const occs = (s.occasions || []).map((o) => o.toLowerCase());
   if (occs.some((o) => o.includes(needle))) return true;
-  if (!occs.length && s.tier === needle) return true;
+  if (s.tier === needle) return true;
   return false;
 };
 
@@ -79,8 +84,38 @@ export default function Featured() {
     tab === 'new'
       ? liveSarees.filter((s) => s.badges.includes('newin'))
       : liveSarees.filter(tabs.find((t) => t.id === tab)!.filter)
-  ).slice(0, 8);
+  ).slice(0, 12);
   const showSkeleton = sareesLoading || items.length === 0;
+
+  // Horizontal carousel scroll controls — mirrors the ProductRail
+  // pattern used elsewhere. Arrows disable when there's nothing to
+  // scroll to on either side; the track itself is a scroll-snap row
+  // so finger / trackpad swipes land on card edges.
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(true);
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el) return;
+    const update = () => {
+      setCanPrev(el.scrollLeft > 4);
+      setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [items.length, tab, showSkeleton]);
+  const scrollBy = (dir: 1 | -1) => {
+    const el = railRef.current;
+    if (!el) return;
+    const card = el.querySelector('[data-featured-card]') as HTMLElement | null;
+    const step = (card?.offsetWidth ?? 240) + 16;
+    el.scrollBy({ left: dir * step * 2, behavior: 'smooth' });
+  };
 
   return (
     <section className="bg-bone py-10 md:py-14">
@@ -109,10 +144,42 @@ export default function Featured() {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+        {/* Carousel controls — hidden on mobile where the user swipes
+            the track directly. Disabled when there's no room to scroll
+            on that side. */}
+        <div className="hidden md:flex items-center justify-end gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => scrollBy(-1)}
+            disabled={!canPrev}
+            aria-label="Scroll left"
+            className="w-9 h-9 border border-ink/25 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory hover:border-maroon-deep disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded-sm"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollBy(1)}
+            disabled={!canNext}
+            aria-label="Scroll right"
+            className="w-9 h-9 border border-ink/25 flex items-center justify-center text-ink hover:bg-maroon-deep hover:text-ivory hover:border-maroon-deep disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded-sm"
+          >
+            ›
+          </button>
+        </div>
+
+        <div
+          ref={railRef}
+          className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-2"
+        >
           {showSkeleton
             ? Array.from({ length: 8 }).map((_, i) => (
-                <div key={`feat-skel-${i}`} className="bg-white rounded-sm overflow-hidden" aria-hidden>
+                <div
+                  key={`feat-skel-${i}`}
+                  data-featured-card
+                  className="shrink-0 w-[calc((100%-0.75rem)/2)] md:w-[calc((100%-2rem)/3)] lg:w-[calc((100%-3rem)/4)] snap-start bg-white rounded-sm overflow-hidden"
+                  aria-hidden
+                >
                   <div className="relative aspect-[4/5] overflow-hidden bg-ink/5 animate-pulse" />
                   <div className="p-3 md:p-3.5 space-y-2">
                     <div className="h-3 w-1/3 bg-ink/5 rounded-sm animate-pulse" />
@@ -130,9 +197,15 @@ export default function Featured() {
                 : 0;
             const productHref = navHref(`/shop/${saree.id}`);
             const CardTag = productHref ? Link : 'span';
+            // Sized so the carousel shows 2 cards on mobile, 3 on
+            // tablet, 4 on desktop at any one time. The calc() widths
+            // subtract the gap between cards so the fourth card lines
+            // up with the right edge of the track instead of overflowing.
+            const cardSize =
+              'shrink-0 w-[calc((100%-0.75rem)/2)] md:w-[calc((100%-2rem)/3)] lg:w-[calc((100%-3rem)/4)] snap-start';
             const cardProps = productHref
-              ? { href: productHref, className: 'group block bg-white rounded-sm overflow-hidden' }
-              : { className: 'group block bg-white rounded-sm overflow-hidden cursor-default' };
+              ? { href: productHref, 'data-featured-card': true, className: `group block bg-white rounded-sm overflow-hidden ${cardSize}` }
+              : { 'data-featured-card': true, className: `group block bg-white rounded-sm overflow-hidden cursor-default ${cardSize}` };
             return (
               <CardTag
                 key={saree.id}

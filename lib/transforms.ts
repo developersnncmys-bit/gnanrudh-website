@@ -24,6 +24,24 @@ function tierForPrice(price: number): Tier {
   return 'everyday';
 }
 
+// The card badge + tab buckets key off `tier`. The admin's explicit
+// occasion tag wins when it names one of the tiers (Bridal / Festive /
+// Everyday) — so a ₹1,000 testing product tagged "Bridal" in the admin
+// actually reads BRIDAL on the storefront card instead of being forced
+// into EVERYDAY by the price fallback. Only when no tier-level occasion
+// is set do we fall back to the price bucket, preserving the old shape
+// for legacy products that carry no occasions at all.
+function deriveTier(occasions: string[], price: number): Tier {
+  const lower = occasions.map((o) => (o || '').toLowerCase());
+  // Prefer the most "important" tier so a product tagged with multiple
+  // parents (e.g. ["Festive", "Bridal"]) reads as Bridal — the higher-
+  // consideration label — rather than whichever tag happens to be first.
+  if (lower.some((o) => o.includes('bridal'))) return 'bridal';
+  if (lower.some((o) => o.includes('festive'))) return 'festive';
+  if (lower.some((o) => o.includes('everyday'))) return 'everyday';
+  return tierForPrice(price);
+}
+
 function paletteForProduct(p: ServerProduct): string[] {
   const out = new Set<string>();
   if (p.hex) out.add(p.hex);
@@ -60,12 +78,19 @@ export function mapProductToSaree(p: ServerProduct): Saree {
     ? p.badges.filter((b): b is BadgeKind => KNOWN_BADGES.includes(b as BadgeKind))
     : [];
   const imageUrls = imageUrlsFor(p);
+  // Admin-tagged occasions (parent names + sub-occasion names). Legacy
+  // records that only carry `occasion` (singular) are promoted into the
+  // array so storefront filters have a single field to key off. Computed
+  // once here and reused for `tier` derivation below.
+  const occasions: string[] = Array.isArray(p.occasions) && p.occasions.length
+    ? p.occasions.filter(Boolean)
+    : (p.occasion ? [p.occasion] : []);
   return {
     id: p._id,
     name: p.name,
     weave: normaliseWeave(p.weave),
     region: p.cat || 'India',
-    tier: tierForPrice(price),
+    tier: deriveTier(occasions, price),
     price,
     mrp,
     badges,
@@ -73,12 +98,7 @@ export function mapProductToSaree(p: ServerProduct): Saree {
     image: imageUrls[0] || '/images/c2.jpg',
     imageUrls,
     imageVariant: typeof p.imageVariant === 'string' ? p.imageVariant : '',
-    // Admin-tagged occasions (parent names + sub-occasion names). Legacy
-    // records that only carry `occasion` (singular) are promoted into the
-    // array so storefront filters have a single field to key off.
-    occasions: Array.isArray(p.occasions) && p.occasions.length
-      ? p.occasions.filter(Boolean)
-      : (p.occasion ? [p.occasion] : []),
+    occasions,
     palette: paletteForProduct(p),
     variants: (p.variants || [])
       .filter((v) => v && v.colour && v.hex)

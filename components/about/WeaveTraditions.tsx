@@ -42,7 +42,7 @@ export default function WeaveTraditions({
     place: w.place,
     era: w.era,
     image: w.image,
-    href: navHref(`/shop?weave=${w.filter}`),
+    href: navHref(`/shop?weave=${w.filter}`) ?? null,
   }));
 
   // Prefer visible, admin-ordered saree categories. If the backend gave us
@@ -60,7 +60,7 @@ export default function WeaveTraditions({
       place: fallback[i]?.place || (c.weaves?.[0] ?? ''),
       era: fallback[i]?.era || '',
       image: c.image || fallback[i]?.image || '',
-      href: navHref(`/shop?cat=${encodeURIComponent(c._id)}`),
+      href: navHref(`/shop?cat=${encodeURIComponent(c._id)}`) ?? null,
     }));
 
   const rows: Row[] = liveRows.length > 0 ? liveRows : fallbackRows;
