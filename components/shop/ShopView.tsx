@@ -23,6 +23,7 @@ import CategoryTierView from './CategoryTierView';
 import CategorySaleView from './CategorySaleView';
 import CategoryPriceView from './CategoryPriceView';
 import CategoryBestsellerView from './CategoryBestsellerView';
+import CategoryCatView from './CategoryCatView';
 import type { Occasion } from '@/lib/sarees';
 import ProductCard from './ProductCard';
 import FilterRail, {
@@ -499,6 +500,21 @@ export default function ShopView() {
   // unaffected.
   if (filters.weaves.length === 1 && !filters.tiers.length && !filters.sale) {
     return <CategoryWeaveView weave={filters.weaves[0]} />;
+  }
+  // Single live-category landings (`/shop?cat=<id>`) render through
+  // CategoryCatView so admin-added categories pick up the same
+  // editorial intro + filter drawer as weave landings. Multi-id
+  // selections written by the "Shop by Category" filter in
+  // AllSareesView carry `view=all` and are routed above — so the
+  // drawer-multi path is unaffected.
+  if (
+    filters.categories.length === 1 &&
+    !filters.weaves.length &&
+    !filters.tiers.length &&
+    !filters.sale &&
+    searchParams.get('view') !== 'all'
+  ) {
+    return <CategoryCatView catId={filters.categories[0]} />;
   }
   // Occasion landings — `/shop?tier=<tier>&occasion=<x>` routes through
   // CategoryOccasionView so each occasion sub-tile (Mehendi, Diwali,

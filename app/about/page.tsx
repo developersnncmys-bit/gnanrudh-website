@@ -4,10 +4,12 @@ import Link from 'next/link';
 import SectionHeader from '@/components/home/SectionHeader';
 import VisionMission from '@/components/about/VisionMission';
 import AnimatedStats from '@/components/about/AnimatedStats';
+import WeaveTraditions from '@/components/about/WeaveTraditions';
 import LegalShell from '@/components/legal/LegalShell';
 import { navHref } from '@/lib/soft-launch';
 import { fetchCmsPage } from '@/lib/cms';
 import { parseCmsBody, isStubBody } from '@/lib/cms-markdown';
+import { API_URL, type ServerHomeBanner } from '@/lib/api';
 
 export const metadata: Metadata = {
   title: 'About Us · House Of GnanRudh',
@@ -121,8 +123,31 @@ const timeline: { year: string; title: string; body: string }[] = [
 // pages table. Non-stub body overrides the bespoke page below.
 const CMS_NAME = 'Our house';
 
+// Admin-controlled hero banner for the About page. Lives in the HomeBanner
+// collection under slot='about' (see admin "Section banners" panel). We
+// pull the whole list in one call and pick out the 'about' row so this
+// stays in step with however Craft Story resolves its own banner. Any
+// failure (404, bad JSON) returns null and the fallback hero below uses
+// the shipped copy + /homebanner/saree4.webp. no-store because the admin
+// edits this live and expects to see changes immediately.
+async function fetchAboutBanner(): Promise<ServerHomeBanner | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/public/home-banners`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const data: { items?: ServerHomeBanner[] } = await res.json();
+    return (data.items || []).find((b) => b?.slot === 'about') ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function AboutPage() {
-  const page = await fetchCmsPage(CMS_NAME);
+  const [page, aboutBanner] = await Promise.all([
+    fetchCmsPage(CMS_NAME),
+    fetchAboutBanner(),
+  ]);
   if (page && !isStubBody(page.body)) {
     const parsed = parseCmsBody(page.body || '');
     return (
@@ -134,11 +159,21 @@ export default async function AboutPage() {
       />
     );
   }
-  return <AboutFallback />;
+  return <AboutFallback banner={aboutBanner} />;
 }
 
-function AboutFallback() {
+function AboutFallback({ banner }: { banner: ServerHomeBanner | null }) {
   const shopHref = navHref('/shop?sort=new');
+  // Admin-published hero wins; each field independently falls back to the
+  // shipped editorial copy so partial content (just an image, just a
+  // title) still renders cleanly. The description is only replaced when
+  // the admin has actually typed one — we don't want an empty textarea to
+  // wipe the on-brand paragraph.
+  const heroImage = banner?.image?.trim() || '/homebanner/saree4.webp';
+  const heroEyebrow = banner?.eyebrow?.trim() || 'Our Story';
+  const heroTitle = banner?.title?.trim() || 'Woven with heritage, draped with love';
+  const heroDescription = banner?.description?.trim()
+    || 'A family-run saree house from Nellore, Andhra Pradesh — curating handloom silks and cottons from the looms of India, delivered worldwide.';
   return (
     <main className="bg-ivory text-ink">
       {/* Hero — mirrors components/home/Hero.tsx: full-bleed photo,
@@ -146,7 +181,7 @@ function AboutFallback() {
           Headline taken verbatim from the brand's own site. */}
       <section className="relative w-full h-[calc(70vh-10px)] min-h-[420px] md:min-h-[520px] max-h-[740px] bg-[#1B0E0A] overflow-hidden">
         <Image
-          src="/homebanner/saree4.webp"
+          src={heroImage}
           alt=""
           fill
           priority
@@ -159,11 +194,8 @@ function AboutFallback() {
         <div className="relative h-full max-w-[1720px] mx-auto px-6 md:px-10 lg:px-14 flex items-center justify-end">
           <div className="max-w-sm md:max-w-[min(32rem,42vw)] text-ivory">
             <span className="inline-block px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-wider rounded-sm mb-4 bg-gold text-ink">
-              Our Story
+              {heroEyebrow}
             </span>
-            <div className="text-[0.65rem] md:text-xs font-medium text-ivory/65 mb-2 uppercase tracking-[0.2em]">
-              Nellore · Andhra Pradesh
-            </div>
             <h1
               className="text-3xl md:text-4xl lg:text-5xl font-semibold leading-[1.05] mb-4"
               style={{
@@ -179,12 +211,10 @@ function AboutFallback() {
                   'drop-shadow(0 2px 6px rgba(0,0,0,0.45)) drop-shadow(0 0 1px rgba(242,201,158,0.3))',
               }}
             >
-              Woven with heritage, draped with love
+              {heroTitle}
             </h1>
             <p className="text-xs md:text-sm text-ivory/80 leading-relaxed">
-              A family-run saree house from Nellore, Andhra Pradesh — curating
-              handloom silks and cottons from the looms of India, delivered
-              worldwide.
+              {heroDescription}
             </p>
           </div>
         </div>
@@ -320,68 +350,12 @@ function AboutFallback() {
         </div>
       </section>
 
-      {/* Six Weaves — editorial numbered list. Each row carries a big
-          display numeral, the weave name + region, and a circular
-          thumbnail on the right. Hairline dividers between rows read as
-          an atlas index rather than a product grid. Jamdani (Dhaka) is
+      {/* Six Weaves — admin-managed categories (saree: true) feed the list.
+          First six visible categories win the slots; when the backend is
+          unreachable the component falls back to the hardcoded `weaves`
+          list below so the section is never empty. Jamdani (Dhaka) is
           called out in the Who We Are copy above. */}
-      <section className="bg-ivory py-12 md:py-16">
-        <div className="max-w-[1720px] mx-auto px-6 lg:px-10">
-          <SectionHeader
-            title="Six Weaving Traditions"
-            description="Each tradition has its own loom, its own thread count, its own grammar. We work with master families in every one of the regions below — plus the Jamdani weavers of Dhaka."
-            showDividers={false}
-          />
-
-          <ol className="max-w-[900px] mx-auto divide-y divide-maroon/10 border-y border-maroon/10">
-            {weaves.map((w, i) => {
-              const href = navHref(`/shop?weave=${w.filter}`);
-              const inner = (
-                <>
-                  <div
-                    className="font-display text-2xl md:text-4xl font-semibold text-maroon/80 tabular-nums leading-none shrink-0 w-10 md:w-16"
-                  >
-                    {String(i + 1).padStart(2, '0')}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-display text-lg md:text-2xl font-semibold text-ink leading-tight">
-                      {w.name}
-                    </div>
-                    <div className="mt-1 text-xs md:text-sm text-ink/65">
-                      {w.place}
-                    </div>
-                    <div className="mt-0.5 text-[0.7rem] md:text-xs italic text-ink/50">
-                      {w.era}
-                    </div>
-                  </div>
-                  <div className="relative shrink-0 w-14 h-14 md:w-20 md:h-20 rounded-full overflow-hidden bg-bone ring-1 ring-maroon/10">
-                    <Image
-                      src={w.image}
-                      alt=""
-                      fill
-                      sizes="(max-width: 768px) 56px, 80px"
-                      className="object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-                  </div>
-                </>
-              );
-              const rowCls =
-                'group flex items-center gap-5 md:gap-7 py-5 md:py-6';
-              return href ? (
-                <li key={w.name}>
-                  <Link href={href} className={`${rowCls} hover:bg-white/60 -mx-4 px-4 transition-colors`}>
-                    {inner}
-                  </Link>
-                </li>
-              ) : (
-                <li key={w.name} className={`${rowCls} cursor-default`}>
-                  {inner}
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      </section>
+      <WeaveTraditions fallback={weaves} />
 
       {/* From loom to your wardrobe — the four-chapter process story,
           laid out as a horizontal strip of tall portrait cards. Each

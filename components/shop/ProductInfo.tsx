@@ -211,8 +211,14 @@ export default function ProductInfo({
           sense a saree customer expects: every tile is another piece
           in THIS weave (Mangalagiri, Kanjeevaram, etc.), ranked by
           palette proximity. First tile is this saree (active, not a
-          link); the rest link to their own PDP. */}
-      {variants.length > 1 && (
+          link); the rest link to their own PDP.
+          Suppressed when the saree's weave is "Fancy Sarees" — that's
+          the fallback bucket from normaliseWeave() for any product
+          whose admin-set weave isn't one of the known types. Grouping
+          those under "More in Fancy Sarees" surfaces an unrelated
+          cross-category row, so the strip hides and the PDP reads
+          cleanly, matching Banarasi / Kanjivaram / etc. */}
+      {saree.weave !== 'Fancy Sarees' && variants.length > 1 && (
         <div className="mb-5">
           <div className="flex items-baseline gap-2 mb-3">
             <span className="text-[0.7rem] font-bold tracking-[0.18em] uppercase text-gray-900">

@@ -9,7 +9,7 @@ import { useLiveSarees } from '@/lib/catalog';
 import ProductCard from './ProductCard';
 import { Section, Check, RangeInput, PriceRow, ColorList } from './FilterRailPrimitives';
 import CategoryWeaveIntro from './CategoryWeaveIntro';
-import CategoryStylingGuide from './CategoryStylingGuide';
+import CategoryStylingGuide, { weaveStylingTips } from './CategoryStylingGuide';
 import CategoryEditorialBlock from './CategoryEditorialBlock';
 import CategoryTrustBand from './CategoryTrustBand';
 import FilterDrawer from './FilterDrawer';
@@ -395,7 +395,11 @@ export default function CategoryWeaveView({ weave }: { weave: Weave }) {
           NewArrivalsView so the New Arrivals page stays lean. The
           trust band bridges the grid and the editorial copy below. */}
       <CategoryTrustBand />
-      <CategoryStylingGuide weave={weave} />
+      <CategoryStylingGuide
+        title={`Wearing your ${weave}`}
+        intro={`Four quick notes from the atelier — how to pair, pleat and place a ${weave} so it carries as beautifully as it was woven.`}
+        tips={weaveStylingTips(weave)}
+      />
       <CategoryEditorialBlock weave={weave} />
 
     </div>

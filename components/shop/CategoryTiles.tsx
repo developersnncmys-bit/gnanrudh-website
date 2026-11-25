@@ -46,6 +46,7 @@ export default function CategoryTiles() {
         caption: `From the ${parent.name} edit — curated by the house.`,
         image: firstSub.image || '',
       });
+      if (result.length === 3) break;
     }
     return result;
   }, [occasions]);

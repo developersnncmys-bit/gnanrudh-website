@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { BADGE_LABEL, type Saree } from '@/lib/sarees';
 import { getColorwayGallery } from '@/lib/product-images';
 import { useRecentlyViewed } from '@/lib/recently-viewed';
-import { useLiveSarees } from '@/lib/catalog';
+import { useLiveSarees, useLiveCategories } from '@/lib/catalog';
 import ProductGallery from './ProductGallery';
 import ProductInfo from './ProductInfo';
 import ProductAccordion from './ProductAccordion';
@@ -36,6 +36,27 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
     .slice(0, 8)
     .map((s) => s.id);
 
+  // Breadcrumb's middle crumb. The admin picks a category on each product
+  // (saree.region holds the category _id — see transforms.mapProductToSaree).
+  // Previously we used `saree.weave`, but the storefront weave field is
+  // normalised against KNOWN_WEAVES and collapses any unrecognised weave
+  // to the "Fancy Sarees" bucket — so a product filed under "Cotton and
+  // Handloom" in the admin would show the breadcrumb "Fancy Sarees" with
+  // a /shop?weave=Fancy+Sarees link that opened a bogus landing page.
+  // Resolving the category id against the live category list fixes both:
+  // the crumb reads the admin's actual pick and the link targets
+  // /shop?cat=<id>, matching the nav and filter rail elsewhere. Falls
+  // back to the old weave-based link when the category isn't resolvable
+  // (legacy / static sarees, or a category that was deleted).
+  const { categories: liveCategories } = useLiveCategories();
+  const category = saree.region
+    ? liveCategories.find((c) => c._id === saree.region) ?? null
+    : null;
+  const crumbLabel = category?.name || saree.weave;
+  const crumbHref = category
+    ? `/shop?cat=${encodeURIComponent(category._id)}`
+    : `/shop?weave=${encodeURIComponent(saree.weave)}`;
+
   // Deterministic numbers derived from the id so the page is stable on reload
   // without needing a backend yet.
   const seed = saree.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -62,10 +83,10 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
             <Link href="/shop" className="hover:text-gray-900">All Sarees</Link>
             <span>/</span>
             <Link
-              href={`/shop?weave=${encodeURIComponent(saree.weave)}`}
+              href={crumbHref}
               className="hover:text-gray-900"
             >
-              {saree.weave}
+              {crumbLabel}
             </Link>
             <span>/</span>
             <span className="text-gray-900 font-semibold" aria-current="page">{saree.name}</span>

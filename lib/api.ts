@@ -133,6 +133,11 @@ export type ServerProduct = {
 export type ServerCategory = {
   _id: string; name: string; weaves: string[]; price: number[];
   visible: boolean; saree: boolean; story?: string; image?: string;
+  // Editorial "Styling Notes" block authored in the admin panel. Empty
+  // tips (no filled rows) cause the storefront section to hide itself.
+  stylingTitle?: string;
+  stylingIntro?: string;
+  stylingTips?: { title: string; body: string }[];
 };
 
 export type ServerArticle = {
@@ -203,7 +208,12 @@ export const heroSlidesApi = {
 
 export type ServerHomeBanner = {
   _id?: string;
-  slot: 'explore' | 'bridal';
+  // `explore` is a legacy slot that was reverted to a static component but
+  // still exists in the shape in case old rows are in the DB. `bridal` is
+  // the homepage strip (CraftStory.tsx). `about` is the About-page hero
+  // (AboutFallback). The backend only accepts bridal + about on writes —
+  // see ALLOWED_SLOTS in routes/homeBanners.js.
+  slot: 'explore' | 'bridal' | 'about';
   image?: string;
   eyebrow?: string;
   title?: string;

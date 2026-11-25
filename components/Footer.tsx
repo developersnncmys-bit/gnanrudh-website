@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -10,6 +12,7 @@ import {
 } from 'react-icons/fa6';
 import { LuMapPin, LuPhone, LuMail, LuArrowRight } from 'react-icons/lu';
 import { navHref } from '@/lib/soft-launch';
+import { useLiveCategories, useLiveOccasions } from '@/lib/catalog';
 
 const BOUTIQUE = {
   addressLine1: 'Shop No. 12, Trunk Road',
@@ -76,6 +79,30 @@ function ColumnTitle({ children }: { children: React.ReactNode }) {
 }
 
 export default function Footer() {
+  // Live-data pulls for the Shop + Weaves columns. Each falls back to an
+  // empty array on first paint; the footer renders fine in that state and
+  // the links appear once the fetch resolves (seen only on a hard refresh).
+  const { categories: sareeCategories } = useLiveCategories({ sareeOnly: true });
+  const { categories: allCategories } = useLiveCategories({ sareeOnly: false });
+  const { occasions: liveOccasions } = useLiveOccasions();
+  // Non-saree categories go under "Collections" (Cotton & Handloom,
+  // Designer & Party Wear, etc.). sareeCategories handles the Weaves column
+  // on its own so we don't double-list.
+  const sareeIdSet = new Set(sareeCategories.map((c) => c._id));
+  const collections = allCategories.filter((c) => !sareeIdSet.has(c._id));
+  // Occasions are flat in the API — parent and sub rows mixed. The
+  // storefront's tier/occasion landing takes the sub names, so render
+  // children first (parent==non-null) and only fall back to parents when
+  // children haven't been curated yet.
+  const subOccasions = liveOccasions.filter((o) => o.parent);
+  const topOccasions = liveOccasions.filter((o) => !o.parent);
+  const footerOccasions = (subOccasions.length ? subOccasions : topOccasions).slice(0, 2);
+  // Pre-built lists for the Shop column: 2 weaves + 2 occasions + 2
+  // collections. Pulled first-to-last from the live arrays so the admin
+  // controls which 2 surface here by reordering in the admin panel.
+  const shopExtraWeaves = sareeCategories.slice(0, 2);
+  const shopExtraCollections = collections.slice(0, 2);
+
   return (
     <footer className="bg-maroon-deep text-ivory">
       {/* The GnanRudh Circle — centred editorial newsletter band. Reads
@@ -195,10 +222,38 @@ export default function Footer() {
             <ul className="space-y-2.5">
               <li><FooterLink href="/shop" className={linkCls}>All Sarees</FooterLink></li>
               <li><FooterLink href="/shop?sort=new" className={linkCls}>New In</FooterLink></li>
-              <li><FooterLink href="/shop?tier=bridal" className={linkCls}>Bridal</FooterLink></li>
-              <li><FooterLink href="/shop?tier=festive" className={linkCls}>Festive</FooterLink></li>
-              <li><FooterLink href="/shop?tier=everyday" className={linkCls}>Everyday</FooterLink></li>
-              <li><FooterLink href="/bespoke" className={linkCls}>Bespoke</FooterLink></li>
+              {/* Shop by weave — first 2 saree categories from the admin.
+                  Linked via ?cat=<id> so an admin rename doesn't break the
+                  landing (the storefront resolves cat ids live). */}
+              {shopExtraWeaves.map((c) => (
+                <li key={`sw-${c._id}`}>
+                  <FooterLink href={`/shop?cat=${encodeURIComponent(c._id)}`} className={linkCls}>
+                    {c.name}
+                  </FooterLink>
+                </li>
+              ))}
+              {/* Shop by occasion — first 2 occasions (sub-occasions
+                  preferred, parent occasions as a fallback). Tier=festive
+                  keeps the URL inside the isLiveTier soft-launch allow-list. */}
+              {footerOccasions.map((o) => (
+                <li key={`so-${o._id}`}>
+                  <FooterLink
+                    href={`/shop?tier=festive&occasion=${encodeURIComponent(o.name.toLowerCase())}`}
+                    className={linkCls}
+                  >
+                    {o.name}
+                  </FooterLink>
+                </li>
+              ))}
+              {/* Collections — first 2 non-saree categories (Cotton,
+                  Designer, Lehengas, etc). */}
+              {shopExtraCollections.map((c) => (
+                <li key={`sc-${c._id}`}>
+                  <FooterLink href={`/shop?cat=${encodeURIComponent(c._id)}`} className={linkCls}>
+                    {c.name}
+                  </FooterLink>
+                </li>
+              ))}
               <li><FooterLink href="/shop?sale=1" className={linkCls}>Sale</FooterLink></li>
             </ul>
           </div>
@@ -206,15 +261,17 @@ export default function Footer() {
           <div>
             <ColumnTitle>Weaves</ColumnTitle>
             <ul className="space-y-2.5">
-              <li><FooterLink href="/shop?weave=Kanjivaram" className={linkCls}>Kanjeevaram</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Banarasi" className={linkCls}>Banarasi</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Mysore+Silk" className={linkCls}>Mysore Silk</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Mangalagiri" className={linkCls}>Mangalagiri</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Pochampally" className={linkCls}>Pochampally</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Gadwal" className={linkCls}>Gadwal</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Patola" className={linkCls}>Patola</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Fancy+Sarees" className={linkCls}>Fancy Sarees</FooterLink></li>
-              <li><FooterLink href="/shop?weave=Mixed+Pattu+Sarees" className={linkCls}>Mixed Pattu Sarees</FooterLink></li>
+              {/* Weaves column — every admin-flagged saree category. Renders
+                  nothing until the fetch resolves, same as the Hero / Explore
+                  sections; the admin's Category list is the source of truth
+                  so renames/reorders show up here on the next load. */}
+              {sareeCategories.map((c) => (
+                <li key={c._id}>
+                  <FooterLink href={`/shop?cat=${encodeURIComponent(c._id)}`} className={linkCls}>
+                    {c.name}
+                  </FooterLink>
+                </li>
+              ))}
             </ul>
           </div>
 
