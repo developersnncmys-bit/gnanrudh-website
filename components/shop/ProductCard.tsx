@@ -83,16 +83,25 @@ export default function ProductCard({
       className="group block bg-white"
     >
       <div className={`relative ${compact ? 'aspect-square' : 'aspect-[2/3]'} overflow-hidden bg-gray-100`}>
-        <Image
-          src={getProductHero(saree)}
-          alt={saree.name}
-          fill
-          priority={priority}
-          sizes="(max-width: 768px) 50vw, (max-width: 1280px) 28vw, 22vw"
-          className={`object-cover transition-transform duration-500 group-hover:scale-105 ${
-            soldOut ? 'grayscale opacity-70' : ''
-          }`}
-        />
+        {(() => {
+          // When the admin hasn't uploaded an image for this product yet,
+          // leave the tile blank (bone-coloured) rather than falling back
+          // to a generic stock photo that pretends to be this saree.
+          const hero = getProductHero(saree);
+          if (!hero) return null;
+          return (
+            <Image
+              src={hero}
+              alt={saree.name}
+              fill
+              priority={priority}
+              sizes="(max-width: 768px) 50vw, (max-width: 1280px) 28vw, 22vw"
+              className={`object-cover transition-transform duration-500 group-hover:scale-105 ${
+                soldOut ? 'grayscale opacity-70' : ''
+              }`}
+            />
+          );
+        })()}
 
         {soldOut && (
           <>

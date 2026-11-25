@@ -89,13 +89,18 @@ export default function BagPanel({
                       href={`/shop/${saree.id}`}
                       className="relative w-24 h-32 lg:w-28 lg:h-36 shrink-0 overflow-hidden bg-bone"
                     >
-                      <Image
-                        src={getProductHero(saree)}
-                        alt={saree.name}
-                        fill
-                        sizes="140px"
-                        className="object-cover"
-                      />
+                      {(() => {
+                        const src = getProductHero(saree);
+                        return src ? (
+                          <Image
+                            src={src}
+                            alt={saree.name}
+                            fill
+                            sizes="140px"
+                            className="object-cover"
+                          />
+                        ) : null;
+                      })()}
                     </Link>
                     <div className="flex-1 min-w-0 flex flex-col">
                       <div className="text-xs text-ink/55 mb-1 font-medium">

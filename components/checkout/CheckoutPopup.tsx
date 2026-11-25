@@ -516,13 +516,18 @@ export default function CheckoutPopup() {
                   {items.map(({ saree, variant, qty }) => (
                     <li key={`${saree.id}::${variant?.id ?? ''}`} className="flex gap-3 py-3 first:pt-0">
                       <div className="relative w-12 h-16 shrink-0 overflow-hidden bg-bone">
-                        <Image
-                          src={getProductHero(saree)}
-                          alt={saree.name}
-                          fill
-                          sizes="48px"
-                          className="object-cover"
-                        />
+                        {(() => {
+                          const src = getProductHero(saree);
+                          return src ? (
+                            <Image
+                              src={src}
+                              alt={saree.name}
+                              fill
+                              sizes="48px"
+                              className="object-cover"
+                            />
+                          ) : null;
+                        })()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] text-ink/55">{saree.weave}</div>

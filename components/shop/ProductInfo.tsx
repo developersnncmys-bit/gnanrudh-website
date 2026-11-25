@@ -242,17 +242,22 @@ export default function ProductInfo({
                         : 'ring-1 ring-black/15 group-hover:ring-black/45'
                     }`}
                   >
-                    <Image
-                      src={getProductHero(v)}
-                      alt=""
-                      fill
-                      sizes="56px"
-                      className={`object-cover transition-all duration-300 ${
-                        active
-                          ? 'scale-105'
-                          : 'saturate-[0.85] group-hover:saturate-100 group-hover:scale-105'
-                      }`}
-                    />
+                    {(() => {
+                      const src = getProductHero(v);
+                      return src ? (
+                        <Image
+                          src={src}
+                          alt=""
+                          fill
+                          sizes="56px"
+                          className={`object-cover transition-all duration-300 ${
+                            active
+                              ? 'scale-105'
+                              : 'saturate-[0.85] group-hover:saturate-100 group-hover:scale-105'
+                          }`}
+                        />
+                      ) : null;
+                    })()}
                     <span
                       aria-hidden
                       className="absolute inset-0 pointer-events-none"

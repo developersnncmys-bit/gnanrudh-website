@@ -162,13 +162,18 @@ export default function CartDrawer() {
                         className="relative w-24 shrink-0 overflow-hidden bg-bone"
                         style={{ aspectRatio: '3 / 4' }}
                       >
-                        <Image
-                          src={getProductHero(saree)}
-                          alt={saree.name}
-                          fill
-                          sizes="96px"
-                          className="object-cover"
-                        />
+                        {(() => {
+                          const src = getProductHero(saree);
+                          return src ? (
+                            <Image
+                              src={src}
+                              alt={saree.name}
+                              fill
+                              sizes="96px"
+                              className="object-cover"
+                            />
+                          ) : null;
+                        })()}
                       </Link>
                       <div className="flex-1 min-w-0 flex flex-col">
                         <div className="flex items-start justify-between gap-2">

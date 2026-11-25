@@ -95,7 +95,12 @@ export function mapProductToSaree(p: ServerProduct): Saree {
     mrp,
     badges,
     story: p.colourNote || p.care || '',
-    image: imageUrls[0] || '/images/c2.jpg',
+    // No silent fallback placeholder — when the admin hasn't uploaded an
+    // image yet, pass an empty string through so cards can render a bare
+    // bone-coloured tile instead of a generic stock photo pretending to
+    // be this product. Consumers check for empty-string before mounting
+    // <Image> (see ProductCard + getProductHero).
+    image: imageUrls[0] || '',
     imageUrls,
     imageVariant: typeof p.imageVariant === 'string' ? p.imageVariant : '',
     occasions,

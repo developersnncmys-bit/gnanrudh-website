@@ -56,13 +56,15 @@ export default function Tiers() {
                 {...(cardProps as { href: string; className: string })}
               >
                 <div className="relative aspect-[4/5] overflow-hidden bg-bone">
-                  <Image
-                    src={saree.image}
-                    alt={saree.name}
-                    fill
-                    sizes="(max-width: 768px) 50vw, 25vw"
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
+                  {saree.image && (
+                    <Image
+                      src={saree.image}
+                      alt={saree.name}
+                      fill
+                      sizes="(max-width: 768px) 50vw, 25vw"
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                  )}
                   <div className="absolute top-2.5 left-2.5 bg-ivory/95 no-pattern backdrop-blur-sm px-2 py-1 text-[0.65rem] font-semibold text-ink uppercase tracking-wide rounded-sm">
                     {tier.title}
                   </div>

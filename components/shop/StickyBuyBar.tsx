@@ -42,7 +42,12 @@ export default function StickyBuyBar({
     >
       <div className="max-w-[1720px] mx-auto px-4 lg:px-8 py-3 flex items-center gap-4">
         <div className="relative w-12 h-16 shrink-0 overflow-hidden bg-gray-100">
-          <Image src={getProductHero(saree)} alt="" fill sizes="48px" className="object-cover" />
+          {(() => {
+            const src = getProductHero(saree);
+            return src ? (
+              <Image src={src} alt="" fill sizes="48px" className="object-cover" />
+            ) : null;
+          })()}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold text-gray-900 line-clamp-1">{saree.name}</div>

@@ -78,13 +78,19 @@ function ProductCard({ saree }: { saree: (typeof SAREES)[number] }) {
       <CardTag {...(cardProps as { href: string; className: string })}>
         {/* Plain rectangular product card, slight rounded corners. */}
         <div className="relative overflow-hidden bg-bone aspect-[4/5] rounded-sm">
-          <Image
-            src={bestSellerImages[saree.id] ?? saree.image}
-            alt={saree.name}
-            fill
-            sizes="(max-width: 640px) 46vw, (max-width: 1024px) 32vw, 270px"
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
-          />
+          {(() => {
+            const src = bestSellerImages[saree.id] ?? saree.image;
+            if (!src) return null;
+            return (
+              <Image
+                src={src}
+                alt={saree.name}
+                fill
+                sizes="(max-width: 640px) 46vw, (max-width: 1024px) 32vw, 270px"
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+            );
+          })()}
         </div>
       </CardTag>
 
