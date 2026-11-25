@@ -7,7 +7,9 @@ import { LuChevronLeft, LuChevronRight } from 'react-icons/lu';
 import { SAREES, formatINR } from '@/lib/sarees';
 import { useLiveSarees } from '@/lib/catalog';
 import WishlistButton from '@/components/shop/WishlistButton';
+import { useShop } from '@/lib/shop-store';
 import { navHref } from '@/lib/soft-launch';
+import { CART_DISABLED } from '@/lib/soft-launch';
 
 // Legacy overrides for static-saree ids — admin products use their own
 // uploaded images via mapProductToSaree, so these entries only matter when
@@ -22,6 +24,29 @@ const bestSellerImages: Record<string, string> = {
   'mixedpattu-katha': '/bestsellers/katha%20baluchari.webp',
 };
 
+// Shopping-bag glyph used by the Add to Cart CTA. Kept as a standalone
+// subcomponent so the three button states (add / added / soft-disabled)
+// can share the same inline svg without repeating 4 lines of markup.
+function BagIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <path d="M16 10a4 4 0 0 1-8 0" />
+    </svg>
+  );
+}
+
 function ProductCard({ saree }: { saree: (typeof SAREES)[number] }) {
   const discount =
     saree.mrp > saree.price
@@ -35,6 +60,18 @@ function ProductCard({ saree }: { saree: (typeof SAREES)[number] }) {
   const cardProps = productHref
     ? { href: productHref, className: 'block group' }
     : { className: 'block group cursor-default' };
+
+  // Cart state so the CTA can actually add the saree. We don't carry a
+  // colour picker on this card — the add goes into the "pick at checkout"
+  // vid-less line, matching the PDP behaviour when no swatch is chosen.
+  const { addToCart, inCart } = useShop();
+  const alreadyInCart = inCart(saree.id);
+  const handleAdd = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (CART_DISABLED) return;
+    addToCart(saree.id, 1);
+  };
 
   return (
     <div className="shrink-0 w-[230px] sm:w-[260px] md:w-[290px] lg:w-[320px] snap-start">
@@ -52,30 +89,35 @@ function ProductCard({ saree }: { saree: (typeof SAREES)[number] }) {
       </CardTag>
 
       {/* Add-to-cart row — filled dark CTA with bag icon on the left,
-          wishlist heart on the right. The dark fill makes it read as a
-          real button instead of a passive label. */}
+          wishlist heart on the right. Clicking actually adds the saree to
+          the cart now (previously the <Link> just navigated to the PDP
+          and the shopper had to click again). After adding, the label
+          flips to "Added · View Bag" and clicking it navigates to /cart. */}
       <div className="flex items-center justify-between gap-2 mt-2">
-        {productHref ? (
-          <Link
-            href={productHref}
-            className="inline-flex items-center gap-1.5 bg-ink text-ivory px-3.5 py-2 text-[0.65rem] font-bold tracking-[0.18em] uppercase hover:bg-maroon-deep transition-colors"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <path d="M16 10a4 4 0 0 1-8 0" />
-            </svg>
-            Add to Cart
-          </Link>
-        ) : (
+        {CART_DISABLED ? (
           <span className="inline-flex items-center gap-1.5 bg-ink/60 text-ivory px-3.5 py-2 text-[0.65rem] font-bold tracking-[0.18em] uppercase cursor-default">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <path d="M16 10a4 4 0 0 1-8 0" />
-            </svg>
+            <BagIcon />
             Add to Cart
           </span>
+        ) : alreadyInCart && productHref ? (
+          <Link
+            href={navHref('/cart') || productHref}
+            className="inline-flex items-center gap-1.5 bg-emerald-700 text-ivory px-3.5 py-2 text-[0.65rem] font-bold tracking-[0.18em] uppercase hover:bg-emerald-800 transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M5 12.5 10 17.5 19.5 8" />
+            </svg>
+            Added · View Bag
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="inline-flex items-center gap-1.5 bg-ink text-ivory px-3.5 py-2 text-[0.65rem] font-bold tracking-[0.18em] uppercase hover:bg-maroon-deep transition-colors"
+          >
+            <BagIcon />
+            Add to Cart
+          </button>
         )}
         <WishlistButton
           productId={saree.id}
