@@ -300,7 +300,7 @@ export default function Footer() {
           {/* Visit the Boutique — real address, phone, email and hours,
               Nalli-style icon-led rows stacked vertically. */}
           <div className="col-span-2 md:col-span-2 lg:col-span-2">
-            <ColumnTitle>Visit the Boutique</ColumnTitle>
+            <ColumnTitle>Visit the Saree Store</ColumnTitle>
             <ul className="space-y-4">
               <li className="flex items-start gap-3 text-ivory/80">
                 <LuMapPin size={18} strokeWidth={1.75} className="mt-0.5 shrink-0" aria-hidden />
