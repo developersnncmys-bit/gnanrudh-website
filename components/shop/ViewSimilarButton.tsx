@@ -6,9 +6,10 @@ import clsx from 'clsx';
 import Image from 'next/image';
 import Link from 'next/link';
 import { LuX } from 'react-icons/lu';
-import { SAREES, formatINR } from '@/lib/sarees';
+import { formatINR } from '@/lib/sarees';
 import { navHref } from '@/lib/soft-launch';
 import { useScrollLock } from '@/lib/scroll-lock';
+import { useLiveSarees, useLiveCategories } from '@/lib/catalog';
 import AddToCartButton from '@/components/shop/AddToCartButton';
 
 /**
@@ -33,10 +34,26 @@ export default function ViewSimilarButton({
 }) {
   const [open, setOpen] = useState(false);
 
-  const current = SAREES.find((s) => s.id === productId);
+  // Pull from the live admin catalogue (not the static SAREES seed) so
+  // newly-uploaded products show up here without a rebuild. Matching on
+  // `region` — which stores the admin category id — so "similar" means
+  // "same admin-tagged category" (Banarasi, Mysore Silk, …). Falls back
+  // to weave for legacy / static sarees whose category didn't resolve.
+  const { sarees: liveSarees } = useLiveSarees();
+  const { categories: liveCategories } = useLiveCategories();
+  const current = liveSarees.find((s) => s.id === productId);
   const similar = current
-    ? SAREES.filter((s) => s.weave === current.weave && s.id !== productId).slice(0, 8)
+    ? liveSarees
+        .filter((s) => {
+          if (s.id === productId) return false;
+          if (current.region && s.region) return s.region === current.region;
+          return s.weave === current.weave;
+        })
+        .slice(0, 3)
     : [];
+  const categoryLabel = current
+    ? liveCategories.find((c) => c._id === current.region)?.name || current.weave
+    : '';
 
   // Shared project scroll-lock: Lenis-aware body overflow with reference
   // counting so nested modals don't release each other's lock.
@@ -78,7 +95,7 @@ export default function ViewSimilarButton({
             >
               <div className="sticky top-0 bg-white flex items-center justify-between px-5 md:px-7 py-4 border-b border-ink/10 z-10">
                 <h3 className="font-display text-lg md:text-2xl font-bold text-ink">
-                  Similar {current?.weave ?? ''} Sarees
+                  Similar {categoryLabel || 'Sarees'}
                 </h3>
                 <button
                   type="button"
@@ -92,10 +109,10 @@ export default function ViewSimilarButton({
 
               {similar.length === 0 ? (
                 <div className="px-6 py-10 text-sm text-ink/60 text-center">
-                  No similar pieces in this weave right now.
+                  No other products in this category right now.
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 px-5 md:px-7 py-5 md:py-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 px-5 md:px-7 py-5 md:py-6">
                   {similar.map((s) => {
                     const href = navHref(`/shop/${s.id}`);
                     const inner = (
@@ -105,7 +122,7 @@ export default function ViewSimilarButton({
                             src={s.image}
                             alt={s.name}
                             fill
-                            sizes="(max-width: 768px) 50vw, 20vw"
+                            sizes="(max-width: 768px) 100vw, 33vw"
                             className="object-cover transition-transform duration-500 group-hover:scale-105"
                           />
                         </div>
