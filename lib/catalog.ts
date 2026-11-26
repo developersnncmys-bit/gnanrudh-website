@@ -110,10 +110,15 @@ export function useLivePosts(): { posts: BlogPost[]; loading: boolean; source: '
 // (saree-flagged only by default so Accessories / Lehengas don't clutter the
 // weave row). Falls back to an empty list when the backend is unreachable —
 // the caller is expected to provide a static shell for that case.
-export function useLiveCategories(opts: { sareeOnly?: boolean } = {}): {
+// House of GnanRudh is a saree-only shop, so every admin category feeds
+// the storefront nav regardless of the legacy `saree` flag. The opts
+// signature is kept for backward compatibility with callers that still
+// pass `sareeOnly`, but the value is ignored. The old filter was a
+// footgun — admins created categories with the default `saree: false`
+// and then wondered why they never appeared in the Shop-by-Weave nav.
+export function useLiveCategories(_opts: { sareeOnly?: boolean } = {}): {
   categories: ServerCategory[]; loading: boolean;
 } {
-  const { sareeOnly = true } = opts;
   const [categories, setCategories] = useState<ServerCategory[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -121,13 +126,12 @@ export function useLiveCategories(opts: { sareeOnly?: boolean } = {}): {
     categoriesApi.list()
       .then((res) => {
         if (!alive) return;
-        const rows = res.items || [];
-        setCategories(sareeOnly ? rows.filter((c) => c.saree) : rows);
+        setCategories(res.items || []);
       })
       .catch(() => alive && setCategories([]))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [sareeOnly]);
+  }, []);
   return { categories, loading };
 }
 
