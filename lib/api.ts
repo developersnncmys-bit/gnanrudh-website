@@ -398,6 +398,12 @@ export const ordersApi = {
     discount?: number;
     paymentMethod?: string;
     address?: { pin: string; [k: string]: any };
+    // GST-05: optional B2B invoicing fields. When billingGstin is set the
+    // admin invoice flips to "Registered (B2B)" and prints the GSTIN
+    // under "Billed to" so the buyer can claim input tax credit.
+    billingGstin?: string;
+    billingName?: string;
+    billingAddress?: string;
   }) => api<CustomerOrder>(`/api/customer-auth/orders`, { method: 'POST', body: JSON.stringify(payload) }),
   cancel: (id: string) =>
     api<CustomerOrder>(`/api/customer-auth/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),

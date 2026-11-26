@@ -58,6 +58,16 @@ export default function CheckoutPopup() {
   const [promoApplying, setPromoApplying] = useState(false);
   const [availableCoupons, setAvailableCoupons] = useState<ServerPublicCoupon[]>([]);
   const [placing, setPlacing] = useState(false);
+  // B2B GST invoice (GST-05). Shoppers who want input tax credit tick the
+  // box and fill in their GSTIN + business name + billing address. The
+  // fields only submit when the box is ticked so a legitimate B2C buyer
+  // who typed something and then unchecked doesn't accidentally end up
+  // with a B2B invoice.
+  const [wantGstInvoice, setWantGstInvoice] = useState(false);
+  const [billingGstin, setBillingGstin] = useState('');
+  const [billingName, setBillingName] = useState('');
+  const [billingAddress, setBillingAddress] = useState('');
+  const [gstError, setGstError] = useState('');
 
   useScrollLock(open);
 
@@ -79,6 +89,11 @@ export default function CheckoutPopup() {
       setPromoCode(null);
       setPromoDiscount(0);
       setPlacing(false);
+      setWantGstInvoice(false);
+      setBillingGstin('');
+      setBillingName('');
+      setBillingAddress('');
+      setGstError('');
     }
   }, [open]);
 
@@ -263,6 +278,28 @@ export default function CheckoutPopup() {
       openAddressModal();
       return;
     }
+    // GST-05: when the shopper ticks "I need a GST invoice", validate the
+    // GSTIN format before sending it to the server (the Order schema
+    // accepts whatever we send, so the UI is the first line of defence).
+    // Expected shape: 2-digit state code + 10-char PAN + 1-char entity +
+    // "Z" default + 1-char checksum. Mixed case input is uppercased so a
+    // stray lowercase letter still passes.
+    const gstinClean = billingGstin.trim().toUpperCase();
+    if (wantGstInvoice) {
+      if (!gstinClean) {
+        setGstError('GSTIN is required when "I need a GST invoice" is ticked.');
+        return;
+      }
+      if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z][0-9A-Z]$/.test(gstinClean)) {
+        setGstError('GSTIN must be 15 characters in the standard format (e.g. 29ABCDE1234F1Z5).');
+        return;
+      }
+      if (!billingName.trim()) {
+        setGstError('Business name is required for a GST invoice.');
+        return;
+      }
+    }
+    setGstError('');
     setPlacing(true);
 
     // Captured once up-front so our local-state mirror stays consistent
@@ -331,6 +368,12 @@ export default function CheckoutPopup() {
           state: addressSnapshot.state,
           country: addressSnapshot.country,
         },
+        // Only send GST fields when the shopper opted in. A blank GSTIN
+        // keeps the invoice B2C — the admin render flips to "Registered"
+        // only when billingGstin is non-empty.
+        billingGstin: wantGstInvoice ? gstinClean : '',
+        billingName: wantGstInvoice ? billingName.trim() : '',
+        billingAddress: wantGstInvoice ? billingAddress.trim() : '',
       });
     } catch (err) {
       setPlacing(false);
@@ -563,6 +606,78 @@ export default function CheckoutPopup() {
                 <SummaryRow label="To pay" value={formatINR(total)} strong />
               </div>
             )}
+
+            {/* GST invoice (B2B) — pinned to the top of the checkout so
+                business shoppers see the opt-in before they commit to an
+                address / payment choice. Fields only submit when the box
+                is ticked; a legitimate B2C buyer who typed something and
+                then unchecked doesn't end up with a B2B invoice. */}
+            <SectionEyebrow>GST invoice</SectionEyebrow>
+            <div className="px-5 pb-4">
+              <div className="border border-ink/15 bg-white p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={wantGstInvoice}
+                    onChange={(e) => {
+                      setWantGstInvoice(e.target.checked);
+                      if (!e.target.checked) setGstError('');
+                    }}
+                    className="mt-1 accent-maroon-deep"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-ink">I need a GST invoice</span>
+                    <span className="block text-[11px] text-ink/60 mt-0.5">
+                      For businesses that want to claim input tax credit. We print your GSTIN on the tax invoice.
+                    </span>
+                  </span>
+                </label>
+
+                {wantGstInvoice && (
+                  <div className="mt-4 grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/70 tracking-wider uppercase mb-1" htmlFor="co-gstin">GSTIN</label>
+                      <input
+                        id="co-gstin"
+                        type="text"
+                        value={billingGstin}
+                        onChange={(e) => setBillingGstin(e.target.value.toUpperCase())}
+                        placeholder="29ABCDE1234F1Z5"
+                        maxLength={15}
+                        className="w-full border border-ink/20 bg-white px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink tracking-wider font-mono uppercase"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/70 tracking-wider uppercase mb-1" htmlFor="co-bizname">Business name</label>
+                      <input
+                        id="co-bizname"
+                        type="text"
+                        value={billingName}
+                        onChange={(e) => setBillingName(e.target.value)}
+                        placeholder="Registered business name"
+                        className="w-full border border-ink/20 bg-white px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-ink/70 tracking-wider uppercase mb-1" htmlFor="co-bizaddr">Billing address (optional)</label>
+                      <textarea
+                        id="co-bizaddr"
+                        value={billingAddress}
+                        onChange={(e) => setBillingAddress(e.target.value)}
+                        placeholder="Registered business address — leave blank to use the shipping address"
+                        rows={2}
+                        className="w-full border border-ink/20 bg-white px-3 py-2.5 text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink resize-none"
+                      />
+                    </div>
+                    {gstError && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-sm">
+                        {gstError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* DELIVERY DETAILS card */}
             <SectionEyebrow>Delivery details</SectionEyebrow>

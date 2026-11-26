@@ -65,11 +65,13 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
 
   // Color state is owned HERE (not in ProductInfo) so the gallery on the
   // left can react to colour changes — picking a swatch swaps the
-  // thumbnails to images of sarees in that colour. Starts empty so the
-  // first paint shows the product's main gallery (product-level images);
-  // the gallery only switches to a variant's own photos after the shopper
-  // clicks a swatch.
-  const [colorId, setColorId] = useState('');
+  // thumbnails to images of sarees in that colour. The first variant is
+  // pre-selected on mount so a shopper landing on the PDP sees that
+  // variant's images and a filled swatch instead of "Pick a colour to
+  // view" — they can still swap by clicking a different swatch. Falls
+  // back to '' (the product-level gallery) when the product has no
+  // variants at all, which is the safer default.
+  const [colorId, setColorId] = useState<string>(() => saree.variants?.[0]?.id ?? '');
   const galleryImages = getColorwayGallery(saree, colorId);
 
   return (

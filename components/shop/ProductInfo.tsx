@@ -1,17 +1,12 @@
 'use client';
 
-import Image from 'next/image';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { type SAREES, formatINR, getColorways, isSoldOut } from '@/lib/sarees';
-import { getPdpVariants, getProductHero } from '@/lib/product-images';
-import { useLiveSarees } from '@/lib/catalog';
 import { useShop } from '@/lib/shop-store';
 import { useCartDrawer } from '@/lib/cart-drawer';
 import { useCheckoutModal } from '@/lib/checkout-modal';
 import { useLoginModal } from '@/lib/login-modal';
 import { useAuth } from '@/lib/auth';
-import { navHref } from '@/lib/soft-launch';
 
 type Saree = (typeof SAREES)[number];
 
@@ -94,12 +89,6 @@ export default function ProductInfo({
     const cap = Math.max(1, selectedVariant?.stock ?? 10);
     setQuantity((q) => Math.min(q, cap));
   }, [selectedVariant?.stock]);
-  // Same-weave variants for the "More in ..." strip — pulled from the live
-  // catalog so new admin products show up as siblings without a rebuild.
-  // First entry is this saree itself; the rest are same-weave live sarees
-  // ranked by palette proximity.
-  const { sarees: liveSarees } = useLiveSarees();
-  const variants = useMemo(() => getPdpVariants(saree, liveSarees), [saree, liveSarees]);
   const [blouseOption, setBlouseOption] = useState<'unstitched' | 'stitched'>('unstitched');
   const [shareNote, setShareNote] = useState<string | null>(null);
 
@@ -204,102 +193,6 @@ export default function ProductInfo({
           <span className="font-semibold text-scarlet tabular-nums">
             {discount}% OFF
           </span>
-        </div>
-      )}
-
-      {/* Same-weave variant strip — a true "more colours" row in the
-          sense a saree customer expects: every tile is another piece
-          in THIS weave (Mangalagiri, Kanjeevaram, etc.), ranked by
-          palette proximity. First tile is this saree (active, not a
-          link); the rest link to their own PDP.
-          Suppressed when the saree's weave is "Fancy Sarees" — that's
-          the fallback bucket from normaliseWeave() for any product
-          whose admin-set weave isn't one of the known types. Grouping
-          those under "More in Fancy Sarees" surfaces an unrelated
-          cross-category row, so the strip hides and the PDP reads
-          cleanly, matching Banarasi / Kanjivaram / etc. */}
-      {saree.weave !== 'Fancy Sarees' && variants.length > 1 && (
-        <div className="mb-5">
-          <div className="flex items-baseline gap-2 mb-3">
-            <span className="text-[0.7rem] font-bold tracking-[0.18em] uppercase text-gray-900">
-              More in {saree.weave}
-            </span>
-            <span aria-hidden className="h-px w-5 bg-gold/70" />
-            <span className="font-display italic text-[0.95rem] text-maroon-deep">
-              {saree.name}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-start gap-2.5">
-            {variants.map((v) => {
-              const active = v.id === saree.id;
-              const safeHref = navHref(`/shop/${v.id}`);
-              const tile = (
-                <>
-                  <span
-                    className={`relative block w-14 h-[72px] overflow-hidden bg-bone transition-all ${
-                      active
-                        ? 'ring-1 ring-maroon-deep ring-offset-2 ring-offset-white'
-                        : 'ring-1 ring-black/15 group-hover:ring-black/45'
-                    }`}
-                  >
-                    {(() => {
-                      const src = getProductHero(v);
-                      return src ? (
-                        <Image
-                          src={src}
-                          alt=""
-                          fill
-                          sizes="56px"
-                          className={`object-cover transition-all duration-300 ${
-                            active
-                              ? 'scale-105'
-                              : 'saturate-[0.85] group-hover:saturate-100 group-hover:scale-105'
-                          }`}
-                        />
-                      ) : null;
-                    })()}
-                    <span
-                      aria-hidden
-                      className="absolute inset-0 pointer-events-none"
-                      style={{
-                        boxShadow:
-                          'inset 0 1px 1px rgba(255,255,255,0.18), inset 0 -2px 4px rgba(0,0,0,0.22)',
-                      }}
-                    />
-                  </span>
-                  <span
-                    aria-hidden
-                    className={`h-[2px] w-6 transition-all ${
-                      active ? 'bg-maroon-deep' : 'bg-transparent'
-                    }`}
-                  />
-                </>
-              );
-              if (active || !safeHref) {
-                return (
-                  <div
-                    key={v.id}
-                    aria-current={active ? 'page' : undefined}
-                    title={active ? `${v.name} (current)` : v.name}
-                    className="group flex flex-col items-center gap-1.5 cursor-default"
-                  >
-                    {tile}
-                  </div>
-                );
-              }
-              return (
-                <Link
-                  key={v.id}
-                  href={safeHref}
-                  aria-label={`View ${v.name}`}
-                  title={v.name}
-                  className="group flex flex-col items-center gap-1.5 focus:outline-none"
-                >
-                  {tile}
-                </Link>
-              );
-            })}
-          </div>
         </div>
       )}
 
