@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   LuSmartphone,
   LuCreditCard,
@@ -58,6 +58,11 @@ export default function CheckoutPopup() {
   const [promoApplying, setPromoApplying] = useState(false);
   const [availableCoupons, setAvailableCoupons] = useState<ServerPublicCoupon[]>([]);
   const [placing, setPlacing] = useState(false);
+  // Synchronous lock to stop a second Pay click (or Enter + click double-fire)
+  // from creating a duplicate order while React is still batching the
+  // `placing` state update. React state is a tick behind — the ref isn't.
+  // Both are reset together in every exit path below.
+  const placingRef = useRef(false);
   // B2B GST invoice (GST-05). Shoppers who want input tax credit tick the
   // box and fill in their GSTIN + business name + billing address. The
   // fields only submit when the box is ticked so a legitimate B2C buyer
@@ -88,7 +93,7 @@ export default function CheckoutPopup() {
       setPromoError('');
       setPromoCode(null);
       setPromoDiscount(0);
-      setPlacing(false);
+      setPlacing(false); placingRef.current = false;
       setWantGstInvoice(false);
       setBillingGstin('');
       setBillingName('');
@@ -264,17 +269,25 @@ export default function CheckoutPopup() {
 
   const onPlaceOrder = async (e: FormEvent) => {
     e.preventDefault();
-    if (placing) return;
+    // Synchronous short-circuit — `placing` state lags by a render, so
+    // two clicks in the same React tick would both see it false and
+    // double-create the order. See the duplicate GR-MWYLNLX69ZIJ /
+    // GR-MWYLNLDTPQ3I pair that prompted this guard.
+    if (placingRef.current) return;
+    placingRef.current = true;
+    if (placing) { placingRef.current = false; return; }
     // Defence-in-depth: if the user reached the popup without being
     // signed in (e.g. signed out in another tab after the popup opened),
     // close the checkout and re-open it after a successful login.
-    if (!authHydrated) return;
+    if (!authHydrated) { placingRef.current = false; return; }
     if (!user) {
+      placingRef.current = false;
       closeCheckout();
       openLogin(() => openCheckout());
       return;
     }
     if (!selectedAddress) {
+      placingRef.current = false;
       openAddressModal();
       return;
     }
@@ -287,14 +300,17 @@ export default function CheckoutPopup() {
     const gstinClean = billingGstin.trim().toUpperCase();
     if (wantGstInvoice) {
       if (!gstinClean) {
+        placingRef.current = false;
         setGstError('GSTIN is required when "I need a GST invoice" is ticked.');
         return;
       }
       if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9][A-Z][0-9A-Z]$/.test(gstinClean)) {
+        placingRef.current = false;
         setGstError('GSTIN must be 15 characters in the standard format (e.g. 29ABCDE1234F1Z5).');
         return;
       }
       if (!billingName.trim()) {
+        placingRef.current = false;
         setGstError('Business name is required for a GST invoice.');
         return;
       }
@@ -376,7 +392,7 @@ export default function CheckoutPopup() {
         billingAddress: wantGstInvoice ? billingAddress.trim() : '',
       });
     } catch (err) {
-      setPlacing(false);
+      setPlacing(false); placingRef.current = false;
       alert(`Could not create order: ${(err as Error).message || 'please try again'}`);
       return;
     }
@@ -408,7 +424,7 @@ export default function CheckoutPopup() {
     //    'Payment pending' server-side; the admin flips it on fulfilment.
     if (payMethod === 'cod') {
       clearCart();
-      setPlacing(false);
+      setPlacing(false); placingRef.current = false;
       const qs = new URLSearchParams({
         id: serverOrder._id,
         email: addressSnapshot.email,
@@ -425,7 +441,7 @@ export default function CheckoutPopup() {
     try {
       rzpInit = await paymentApi.createOrder(serverOrder._id);
     } catch (err) {
-      setPlacing(false);
+      setPlacing(false); placingRef.current = false;
       alert(`Could not start payment: ${(err as Error).message || 'please try again'}`);
       return;
     }
@@ -455,7 +471,7 @@ export default function CheckoutPopup() {
               razorpay_signature: payload.razorpay_signature,
             });
             clearCart();
-            setPlacing(false);
+            setPlacing(false); placingRef.current = false;
             const qs = new URLSearchParams({
               order: serverOrder._id,
               method: payMethod,
@@ -470,7 +486,7 @@ export default function CheckoutPopup() {
             // mark it Paid independently — the user usually sees a Paid
             // state and gets forwarded to /payment/success automatically.
             // The ref is in the URL so support can quote it if needed.
-            setPlacing(false);
+            setPlacing(false); placingRef.current = false;
             console.warn('[checkout] verify failed, routing to /payment/retry', err);
             const qs = new URLSearchParams({
               order: serverOrder._id,
@@ -485,19 +501,19 @@ export default function CheckoutPopup() {
           // Cancelled on the server, AND mirror the cancel into the local
           // orders store so the Account page's "Placed" badge immediately
           // flips to "Cancelled" without waiting for a page reload.
-          setPlacing(false);
+          setPlacing(false); placingRef.current = false;
           cancelOrder(serverOrder._id, 'payment-dismissed');
           await releaseServerReservation(serverOrder._id, 'dismissed');
         },
         onFailure: async () => {
-          setPlacing(false);
+          setPlacing(false); placingRef.current = false;
           cancelOrder(serverOrder._id, 'payment-failed');
           await releaseServerReservation(serverOrder._id, 'failed');
           alert('Payment failed. Please try again or pick a different payment method.');
         },
       });
     } catch (err) {
-      setPlacing(false);
+      setPlacing(false); placingRef.current = false;
       cancelOrder(serverOrder._id, 'razorpay-open-failed');
       await releaseServerReservation(serverOrder._id, 'open-failed');
       alert(`Payment could not open: ${(err as Error).message}`);

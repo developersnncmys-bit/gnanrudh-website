@@ -143,12 +143,13 @@ export default function CategoryPriceView({
 
   // Live catalogue only — sarees inside the locked price band, newest first.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Server returns products newest-first (created DESC) — don't reverse,
+  // or the newest arrivals fall to the bottom of the price view.
   const base = useMemo(() => {
     const lo = pmin ?? 0;
     const hi = pmax ?? Infinity;
-    return [...liveSarees]
-      .filter((s) => s.price >= lo && (hi === Infinity ? true : s.price < hi))
-      .reverse();
+    return liveSarees
+      .filter((s) => s.price >= lo && (hi === Infinity ? true : s.price < hi));
   }, [liveSarees, pmin, pmax]);
 
   const items = useMemo(() => {

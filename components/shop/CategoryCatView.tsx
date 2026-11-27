@@ -157,8 +157,10 @@ export default function CategoryCatView({ catId }: { catId: string }) {
   // Live catalogue filtered to this category. `saree.region` stores the
   // backend category id — see lib/transforms.ts.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Server returns products newest-first (created DESC) — don't reverse,
+  // or the newest arrivals fall to the bottom of this category.
   const base = useMemo(
-    () => liveSarees.filter((s) => s.region === catId).reverse(),
+    () => liveSarees.filter((s) => s.region === catId),
     [liveSarees, catId],
   );
 

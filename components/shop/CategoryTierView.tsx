@@ -171,15 +171,15 @@ export default function CategoryTierView({ tier }: { tier: Tier }) {
   // Products with no occasions tagged fall back to the price-derived
   // tier so legacy data still lands somewhere.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Server returns products newest-first (created DESC) — don't reverse,
+  // or the newest arrivals fall to the bottom of this tier view.
   const base = useMemo(() => {
     const needle = tier.toLowerCase();
-    return [...liveSarees]
-      .filter((s) => {
-        const occs = (s.occasions || []).map((o) => o.toLowerCase());
-        if (occs.length) return occs.some((o) => o.includes(needle));
-        return s.tier === tier;
-      })
-      .reverse();
+    return liveSarees.filter((s) => {
+      const occs = (s.occasions || []).map((o) => o.toLowerCase());
+      if (occs.length) return occs.some((o) => o.includes(needle));
+      return s.tier === tier;
+    });
   }, [liveSarees, tier]);
 
   const items = useMemo(() => {

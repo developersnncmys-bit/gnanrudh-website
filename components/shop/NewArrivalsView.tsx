@@ -181,7 +181,11 @@ export default function NewArrivalsView() {
   // recently added live products land at the top. `loading` drives the
   // skeleton grid below.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
-  const base = useMemo(() => [...liveSarees].reverse(), [liveSarees]);
+  // The backend already returns products newest-first (sort `created: -1`
+  // in /api/public/products). Keep that order — a prior `.reverse()` call
+  // was flipping it to oldest-first, so a just-added product sat at the
+  // bottom instead of the top of New Arrivals.
+  const base = useMemo(() => liveSarees, [liveSarees]);
 
   // Filter + sort pipeline.
   const items = useMemo(() => {

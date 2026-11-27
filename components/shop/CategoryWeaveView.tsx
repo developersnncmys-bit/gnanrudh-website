@@ -158,8 +158,10 @@ export default function CategoryWeaveView({ weave }: { weave: Weave }) {
   // Live catalogue only — filter to this landing's locked weave. `loading`
   // drives the skeleton grid below.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Server returns products newest-first (created DESC) — don't reverse,
+  // or the newest arrivals fall to the bottom of this weave view.
   const base = useMemo(
-    () => liveSarees.filter((s) => s.weave === weave).reverse(),
+    () => liveSarees.filter((s) => s.weave === weave),
     [liveSarees, weave],
   );
 

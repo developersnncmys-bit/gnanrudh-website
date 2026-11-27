@@ -220,7 +220,7 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
   // / Sale) stay fixed regardless so brand navigation never disappears.
   const { categories: liveCategories } = useLiveCategories();
   const { priceRanges: livePriceRanges } = useLivePriceRanges();
-  const { occasions: liveOccasions } = useLiveOccasions();
+  const { occasions: liveOccasions, loading: occasionsLoading } = useLiveOccasions();
   // Search panel's "Recommended For You" rail is now the admin-tagged
   // bestsellers (Product.badges includes 'bestseller'). Falls back to the
   // first few static sarees so the grid is never blank on a fresh DB or
@@ -286,18 +286,30 @@ function NavInner({ searchParams }: { searchParams: URLSearchParams | null }) {
       );
   const visibleCategories = middleCategories.slice(0, CATEGORY_CAP);
   const overflowCategories = middleCategories.slice(CATEGORY_CAP);
+  // Drop the "Occasions" entry from the tail when the admin hasn't added
+  // any top-level occasions — the mega-menu would open with only the
+  // shipped static fallback (which the admin can't control) and the
+  // tail link would feel disconnected. Checks `parent`-less rows only,
+  // matching buildOccasionsGroups which keys the mega-menu off parents.
+  // Waits for the fetch to resolve so the link doesn't flash in and then
+  // disappear on a slow connection.
+  const liveOccasionParents = liveOccasions.filter((o) => !o.parent);
+  const hideOccasions = !occasionsLoading && liveOccasionParents.length === 0;
+  const tailLinks: WeaveLink[] = hideOccasions
+    ? WEAVE_LINKS_SHELL_TAIL.filter((l) => l.label !== 'Occasions')
+    : WEAVE_LINKS_SHELL_TAIL;
   const weaveLinks: WeaveLink[] = [
     ...WEAVE_LINKS_SHELL_HEAD,
     ...visibleCategories,
     ...(overflowCategories.length ? [{ href: '#more', label: 'More' }] : []),
-    ...WEAVE_LINKS_SHELL_TAIL,
+    ...tailLinks,
   ];
   // Mobile drawer uses the uncapped list — vertical space is cheap there
   // and a "More" dropdown inside a slide-in drawer would be awkward.
   const drawerWeaveLinks: WeaveLink[] = [
     ...WEAVE_LINKS_SHELL_HEAD,
     ...middleCategories,
-    ...WEAVE_LINKS_SHELL_TAIL,
+    ...tailLinks,
   ];
 
   const [scrolled, setScrolled] = useState(false);

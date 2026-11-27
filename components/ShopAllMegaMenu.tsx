@@ -108,25 +108,35 @@ export function buildShopAllGroups(
       image: (r.image && r.image.trim()) || fallbackPriceImages[i % fallbackPriceImages.length],
     };
   });
-  return GROUPS.map((g) => {
-    if (g.id === 'weaves' && categories.length) {
-      return {
-        ...g,
-        tiles: categories.map((c) => ({
-          label: c.name,
-          href: `/shop?cat=${encodeURIComponent(c._id)}`,
-          image: c.image || undefined,
-        })),
-      };
-    }
-    if (g.id === 'price' && priceTiles.length) {
-      return { ...g, tiles: priceTiles };
-    }
-    if (g.id === 'occasions' && occasionTiles.length) {
-      return { ...g, tiles: occasionTiles };
-    }
-    return g;
-  });
+  return GROUPS
+    // Drop "Shop by Occasion" entirely when the backend has no top-level
+    // occasions. The static fallback tiles (Bridal / Festive / Everyday)
+    // are kept for every OTHER call site (those still read `GROUPS`
+    // directly), but the live mega-menu respects the admin's actual
+    // taxonomy so an unused section doesn't hang around.
+    .filter((g) => g.id !== 'occasions' || occasionTiles.length > 0)
+    .map((g) => {
+      if (g.id === 'weaves' && categories.length) {
+        // Cap the mega-menu to the first 5 admin categories so the panel
+        // doesn't balloon when more are added. The Shop page still lists
+        // the full set in its filter rail; this is just the entry surface.
+        return {
+          ...g,
+          tiles: categories.slice(0, 5).map((c) => ({
+            label: c.name,
+            href: `/shop?cat=${encodeURIComponent(c._id)}`,
+            image: c.image || undefined,
+          })),
+        };
+      }
+      if (g.id === 'price' && priceTiles.length) {
+        return { ...g, tiles: priceTiles };
+      }
+      if (g.id === 'occasions' && occasionTiles.length) {
+        return { ...g, tiles: occasionTiles };
+      }
+      return g;
+    });
 }
 
 export default function ShopAllMegaMenu({

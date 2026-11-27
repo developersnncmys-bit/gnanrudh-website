@@ -170,8 +170,10 @@ export default function CategorySaleView() {
 
   // Live catalogue only — on-sale sarees, newest first.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Server returns products newest-first (created DESC) — don't reverse,
+  // or the newest arrivals fall to the bottom of the Sale view.
   const base = useMemo(
-    () => [...liveSarees].filter(onSale).reverse(),
+    () => liveSarees.filter(onSale),
     [liveSarees],
   );
 

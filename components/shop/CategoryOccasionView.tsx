@@ -188,11 +188,11 @@ export default function CategoryOccasionView({
 
   // Live catalogue only — filter to this landing's tier + occasion.
   const { sarees: liveSarees, loading: sareesLoading } = useLiveSarees();
+  // Server returns products newest-first (created DESC) — don't reverse,
+  // or the newest arrivals fall to the bottom of this occasion view.
   const base = useMemo(
     () =>
-      [...liveSarees]
-        .filter((s) => s.tier === tier && sareeMatchesOccasion(s, occasion))
-        .reverse(),
+      liveSarees.filter((s) => s.tier === tier && sareeMatchesOccasion(s, occasion)),
     [liveSarees, tier, occasion],
   );
 
