@@ -1047,17 +1047,26 @@ export function getColorways(saree: Saree): Colorway[] {
   const out: Colorway[] = [];
 
   // Admin-defined variants win — each one becomes a swatch with the exact
-  // name the admin typed. Only variants with a hex are usable as colour
-  // chips. When the admin has defined variants, we DON'T pad with standards
-  // — the colour picker reflects exactly what's in stock.
+  // name the admin typed. Only variants with a hex AND a non-empty colour
+  // name are usable as colour chips. Empty-colour variants belong to the
+  // "no colour variant" products created via the bulk-upload path when
+  // qty > 0 but colour was None — the admin UI renders those as a plain
+  // Stock row, and the storefront should mirror that by showing no
+  // picker at all. When the admin has defined variants, we DON'T pad
+  // with standards — the picker reflects exactly what's in stock, or
+  // stays empty for variant-less products.
   if (saree.variants && saree.variants.length) {
     for (const v of saree.variants) {
       const key = (v.hex || '').toLowerCase();
-      if (!key || seen.has(key)) continue;
+      if (!key || !v.colour || seen.has(key)) continue;
       seen.add(key);
       out.push({ id: v.id || `variant-${out.length}`, name: v.colour, hex: key });
     }
-    if (out.length) return out;
+    // Return whatever we gathered — including an empty array. Falling
+    // through to the palette fallback below would surface the standard
+    // heirloom swatches on a product the admin explicitly created with
+    // no colour variants, which is the surprise we're avoiding.
+    return out;
   }
 
   // Fallback (static sarees only): start with the saree's own palette…

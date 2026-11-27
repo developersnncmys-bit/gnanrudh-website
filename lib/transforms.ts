@@ -106,10 +106,16 @@ export function mapProductToSaree(p: ServerProduct): Saree {
     occasions,
     palette: paletteForProduct(p),
     variants: (p.variants || [])
-      .filter((v) => v && v.colour && v.hex)
+      // Keep variants with a hex even when their colour name is empty —
+      // that's the "no-colour product" case created by the bulk-upload
+      // path when the admin set qty but no colour. The storefront's
+      // colour picker filters these out so no fallback palette swatches
+      // appear; what matters here is that saree.variants.length > 0 so
+      // getColorways knows the product is admin-defined.
+      .filter((v) => v && v.hex)
       .map((v) => ({
         id: v.id,
-        colour: v.colour,
+        colour: v.colour || '',
         hex: v.hex!,
         sku: v.sku,
         stock: v.stock,

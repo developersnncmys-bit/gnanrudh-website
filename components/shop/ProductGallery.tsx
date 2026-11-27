@@ -14,6 +14,7 @@ export default function ProductGallery({
   images,
   videoUrl,
   alt,
+  hasColourPicker = true,
 }: {
   images: string[];
   // Optional admin-uploaded drape video. When present, rendered as the
@@ -21,6 +22,10 @@ export default function ProductGallery({
   // the zoomable <Image> to a native <video> player.
   videoUrl?: string;
   alt: string;
+  // False when the product has no colour picker (e.g. the bulk-upload
+  // "no colour variant" case). Drives the empty-state copy so we don't
+  // tell the shopper to "pick another colour" when there's no picker.
+  hasColourPicker?: boolean;
 }) {
   const [active, setActive] = useState(0);
   const [zoom, setZoom] = useState(false);
@@ -39,6 +44,12 @@ export default function ProductGallery({
   // in the same frame so the layout doesn't jump and the swatch click
   // feels like something happened.
   if (!images.length) {
+    const emptyCopy = hasColourPicker
+      ? 'Photos for this colour are being added. Pick another colour to see the gallery.'
+      : 'Photos for this product are being added.';
+    const emptyAria = hasColourPicker
+      ? `${alt} — no photo uploaded for this colour yet`
+      : `${alt} — no photo uploaded yet`;
     return (
       <div className="flex gap-3 lg:gap-4 lg:ml-[100px]">
         <div className="hidden md:block w-20 shrink-0" aria-hidden />
@@ -46,7 +57,7 @@ export default function ProductGallery({
           <div
             className="relative aspect-[1/1] overflow-hidden bg-gray-100 flex items-center justify-center text-center px-6"
             role="img"
-            aria-label={`${alt} — no photo uploaded for this colour yet`}
+            aria-label={emptyAria}
           >
             <div className="text-sm text-gray-500 max-w-[260px]">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3 text-gray-400" aria-hidden>
@@ -54,7 +65,7 @@ export default function ProductGallery({
                 <circle cx="9" cy="10" r="2" />
                 <path d="m21 16-5-5-9 9" />
               </svg>
-              Photos for this colour are being added. Pick another colour to see the gallery.
+              {emptyCopy}
             </div>
           </div>
         </div>

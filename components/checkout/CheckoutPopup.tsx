@@ -594,7 +594,7 @@ export default function CheckoutPopup() {
                           {saree.name}
                         </div>
                         <div className="text-[11px] text-ink/55 mt-0.5">
-                          {variant && (
+                          {variant && variant.colour && (
                             <>
                               <span className="inline-block align-middle w-2 h-2 rounded-full ring-1 ring-black/15 mr-1" style={{ background: variant.hex }} aria-hidden />
                               {variant.colour} · </>

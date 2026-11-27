@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { BADGE_LABEL, type Saree } from '@/lib/sarees';
+import { BADGE_LABEL, type Saree, getColorways } from '@/lib/sarees';
 import { getColorwayGallery } from '@/lib/product-images';
 import { useRecentlyViewed } from '@/lib/recently-viewed';
 import { useLiveSarees, useLiveCategories } from '@/lib/catalog';
@@ -73,6 +73,11 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
   // variants at all, which is the safer default.
   const [colorId, setColorId] = useState<string>(() => saree.variants?.[0]?.id ?? '');
   const galleryImages = getColorwayGallery(saree, colorId);
+  // No-colour products created via bulk upload have variants in the data
+  // model but no colour chips in the picker — so getColorways returns
+  // []. Thread that fact to the gallery so its empty state drops the
+  // misleading "Pick another colour to see the gallery" hint.
+  const hasColourPicker = getColorways(saree).length > 0;
 
   return (
     <div className="bg-white min-h-screen text-gray-900">
@@ -104,6 +109,7 @@ export default function ProductDetail({ saree }: { saree: Saree }) {
             images={galleryImages}
             videoUrl={saree.videoUrl}
             alt={saree.name}
+            hasColourPicker={hasColourPicker}
           />
           <ProductInfo
             saree={saree}

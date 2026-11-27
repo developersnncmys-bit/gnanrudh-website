@@ -11,6 +11,7 @@ import { useCheckoutModal } from '@/lib/checkout-modal';
 import { useLoginModal } from '@/lib/login-modal';
 import { useAuth } from '@/lib/auth';
 import { useScrollLock } from '@/lib/scroll-lock';
+import { productsApi } from '@/lib/api';
 
 export default function CartDrawer() {
   const { open, closeCart } = useCartDrawer();
@@ -39,6 +40,38 @@ export default function CartDrawer() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, closeCart]);
+
+  // Validate cart lines against the live backend when the drawer opens.
+  // The catalogue cache (useLiveSarees) only fetches once on page mount
+  // — so a product deleted or hidden by the admin while the shopper has
+  // the tab open stays visible in the cart until the next refresh.
+  // Direct per-id fetch solves that: a 404 or Hidden status drops the
+  // line from the cart immediately. Runs once per open.
+  useEffect(() => {
+    if (!open || !cart.length) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(
+        cart.map(async (line) => {
+          try {
+            const p = await productsApi.get(line.productId);
+            // Backend's /public/products/:id already filters to
+            // status: 'Active' — a 404 fires for Hidden and Draft too,
+            // so any truthy response means the product is live.
+            return { line, live: Boolean(p?._id) };
+          } catch {
+            return { line, live: false };
+          }
+        }),
+      );
+      if (cancelled) return;
+      for (const { line, live } of results) {
+        if (!live) removeFromCart(line.productId, line.variantId ?? null);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const itemCount = items.reduce((sum, i) => sum + i.qty, 0);
   const mrpTotal = items.reduce((sum, i) => sum + i.saree.mrp * i.qty, 0);
@@ -201,7 +234,7 @@ export default function CartDrawer() {
                         <div className="mt-1 text-[0.72rem] text-ink/60">
                           {saree.weave}
                         </div>
-                        {variant && (
+                        {variant && variant.colour && (
                           <div className="mt-1.5 flex items-center gap-1.5 text-[0.72rem] text-ink/75">
                             <span
                               aria-hidden

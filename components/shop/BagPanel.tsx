@@ -113,7 +113,7 @@ export default function BagPanel({
                         {saree.name}
                       </Link>
                       <div className="text-xs text-ink/55 mb-1">{saree.region}</div>
-                      {variant && (
+                      {variant && variant.colour && (
                         <div className="mb-3 flex items-center gap-1.5 text-xs text-ink/75">
                           <span
                             aria-hidden
